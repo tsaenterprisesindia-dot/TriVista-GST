@@ -1,0 +1,346 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { api } from '../api/client';
+
+const inr = (n) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(n) || 0);
+
+const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+export default function Billing() {
+  const navigate = useNavigate();
+  const [customers, setCustomers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [company, setCompany] = useState(null);
+  const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [ai, setAi] = useState(null);
+
+  const [form, setForm] = useState(() => ({
+    customer_id: '',
+    invoice_date: new Date().toISOString().slice(0, 10),
+    due_date: '',
+    payment_mode: 'CREDIT',
+    paid_amount: 0,
+    notes: '',
+    items: [],
+  }));
+
+  useEffect(() => {
+    api.get('/customers?limit=100').then((d) => setCustomers(d.data || [])).catch(() => {});
+    api.get('/products?limit=200').then((d) => setProducts(d.data || [])).catch(() => {});
+    api.get('/company').then(setCompany).catch(() => {});
+  }, []);
+
+  const customer = customers.find((c) => String(c.id) === String(form.customer_id));
+  const companyState = company?.state_code || '29';
+  const supplyState = form.place_of_supply || customer?.state_code || companyState;
+  const isInterstate = String(supplyState) !== String(companyState);
+
+  const visibleProducts = products.filter(
+    (p) => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.sku || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  const addItem = (p) => {
+    setForm((f) => {
+      const hit = f.items.find((i) => i.product_id === p.id);
+      if (hit) {
+        return { ...f, items: f.items.map((i) => (i.product_id === p.id ? { ...i, quantity: r2(i.quantity + 1) } : i)) };
+      }
+      return {
+        ...f,
+        items: [
+          ...f.items,
+          {
+            product_id: p.id,
+            item_name: p.name,
+            hsn_code: p.hsn_code,
+            gst_rate: Number(p.gst_rate) || 0,
+            quantity: 1,
+            unit_price: Number(p.selling_price) || 0,
+            discount: 0,
+          },
+        ],
+      };
+    });
+  };
+
+  const setItem = (idx, key) => (e) => {
+    setForm((f) => {
+      const items = f.items.map((it, i) => (i === idx ? { ...it, [key]: e.target.type === 'number' ? Number(e.target.value) : e.target.value } : it));
+      return { ...f, items };
+    });
+  };
+
+  const removeItem = (idx) => setForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+
+  const calc = useMemo(() => {
+    let subtotal = 0, discount = 0, cgst = 0, sgst = 0, igst = 0, tax = 0, grand = 0;
+    const detail = form.items.map((it) => {
+      const gross = it.quantity * it.unit_price;
+      const taxable = gross - (it.discount || 0);
+      let cg = 0, sg = 0, ig = 0;
+      if (isInterstate) ig = r2((taxable * it.gst_rate) / 100);
+      else { cg = r2((taxable * it.gst_rate) / 200); sg = r2((taxable * it.gst_rate) / 200); }
+      subtotal += gross;
+      discount += it.discount || 0;
+      cgst += cg; sgst += sg; igst += ig;
+      tax += cg + sg + ig;
+      grand += taxable + cg + sg + ig;
+      return { ...it, taxable, cg, sg, ig, line: r2(taxable + cg + sg + ig) };
+    });
+    return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), igst: r2(igst), tax: r2(tax), grand: r2(grand) };
+  }, [form.items, isInterstate]);
+
+  const payload = () => ({
+    customer_id: form.customer_id,
+    customer_gstin: customer?.gstin || '',
+    place_of_supply: supplyState,
+    is_interstate: isInterstate,
+    invoice_date: form.invoice_date,
+    due_date: form.due_date || null,
+    payment_mode: form.payment_mode,
+    paid_amount: Number(form.paid_amount) || 0,
+    notes: form.notes || null,
+    items: form.items.map((it) => ({
+      product_id: it.product_id,
+      item_name: it.item_name,
+      hsn_code: it.hsn_code,
+      gst_rate: it.gst_rate,
+      quantity: it.quantity,
+      unit: 'PCS',
+      unit_price: it.unit_price,
+      discount: it.discount || 0,
+    })),
+  });
+
+  const runAiCheck = async () => {
+    setError('');
+    setAiBusy(true);
+    setAi(null);
+    try {
+      setAi(await api.post('/ai/validate', payload()));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setAi(null);
+    setBusy(true);
+    try {
+      const v = await api.post('/ai/validate', payload());
+      if (v.issues.some((x) => x.level === 'error')) {
+        setAi(v);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setError('AI check found errors below. Fix them, then save again.');
+        return;
+      }
+      const d = await api.post('/invoices', payload());
+      navigate(`/invoices/${d.id}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit}>
+      {error && <div className="error-banner">{error}</div>}
+
+      {ai && (
+        <div className="card" style={{ borderColor: ai.ok ? 'var(--green)' : 'var(--amber)' }}>
+          <div className="card-title">
+            <span>Smart Entry Check (free built-in AI)</span>
+            {ai.ok ? <span className="badge badge-green">OK</span> : <span className="badge badge-amber">Review</span>}
+          </div>
+          {ai.issues.length === 0 ? (
+            <div className="muted">No issues found — this entry looks correct.</div>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {ai.issues.map((it, idx) => (
+                <li key={idx} className="mb">
+                  <span className={`badge ${it.level === 'error' ? 'badge-red' : 'badge-amber'}`}>{it.level.toUpperCase()}</span>{' '}
+                  {it.message}
+                </li>
+              ))}
+            </ul>
+          )}
+          {ai.suggestions.length > 0 && (
+            <div className="muted mt" style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+              {ai.suggestions.map((s) => `• ${s}`).join('\n')}
+            </div>
+          )}
+          <div className="muted mt">AI-computed grand total: <strong>{inr(ai.grandTotal)}</strong></div>
+        </div>
+      )}
+
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">Invoice Details</div>
+          <div className="row">
+            <div className="field">
+              <label>Customer</label>
+              <select value={form.customer_id} onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))} required>
+                <option value="">Select customer</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}{c.company_name ? ` (${c.company_name})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Invoice Date</label>
+              <input type="date" value={form.invoice_date} onChange={(e) => setForm((f) => ({ ...f, invoice_date: e.target.value }))} required />
+            </div>
+          </div>
+          <div className="row">
+            <div className="field">
+              <label>Payment Mode</label>
+              <select value={form.payment_mode} onChange={(e) => setForm((f) => ({ ...f, payment_mode: e.target.value }))}>
+                <option value="CREDIT">Credit</option>
+                <option value="CASH">Cash</option>
+                <option value="CARD">Card</option>
+                <option value="UPI">UPI</option>
+                <option value="BANK">Bank Transfer</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Amount Paid Now (₹)</label>
+              <input type="number" step="0.01" min="0" value={form.paid_amount} onChange={(e) => setForm((f) => ({ ...f, paid_amount: e.target.value }))} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Notes</label>
+            <textarea rows="2" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional reference / remarks" />
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Supply</div>
+          <div className="field">
+            <label>Place of Supply (State Code)</label>
+            <input value={customer?.state_code || ''} disabled placeholder="From customer state" />
+          </div>
+          <div className="field">
+            <label>Tax Applied</label>
+            <input value={isInterstate ? `IGST (cross-state vs ${company?.state || 'your state'})` : `CGST + SGST (${company?.state || 'same state'})`} disabled />
+          </div>
+          {customer?.outstanding_balance > 0 && (
+            <div className="badge badge-amber">Outstanding: {inr(customer.outstanding_balance)}</div>
+          )}
+          <div className="muted mt" style={{ fontSize: 12 }}>
+            Invoice type: {customer?.gstin ? 'B2B' : 'B2C'} · GSTIN: {customer?.gstin || 'Not registered'}
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">Products</div>
+        <div className="field">
+          <input placeholder="Search products by name or SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        {visibleProducts.length === 0 ? (
+          <div className="empty">No products found. Add products first.</div>
+        ) : (
+          <div className="stats-grid">
+            {visibleProducts.slice(0, 40).map((p) => (
+              <button type="button" className="btn" key={p.id} onClick={() => addItem(p)} style={{ justifyContent: 'space-between' }}>
+                <span>{p.name}</span>
+                <span className="muted nowrap">{inr(p.selling_price)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">Line Items</div>
+        {calc.detail.length === 0 ? (
+          <div className="empty">Add products above to build the invoice.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>HSN</th>
+                <th className="right">Qty</th>
+                <th className="right">Rate</th>
+                <th className="right">Disc</th>
+                <th className="right">GST%</th>
+                <th className="right">Taxable</th>
+                <th className="right">CGST</th>
+                <th className="right">SGST</th>
+                <th className="right">IGST</th>
+                <th className="right">Line</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {calc.detail.map((it, idx) => (
+                <tr key={idx}>
+                  <td><input value={it.item_name} onChange={setItem(idx, 'item_name')} style={{ width: 150 }} /></td>
+                  <td><input value={it.hsn_code || ''} onChange={setItem(idx, 'hsn_code')} style={{ width: 70 }} /></td>
+                  <td className="right"><input type="number" min="0" value={it.quantity} onChange={setItem(idx, 'quantity')} style={{ width: 60, textAlign: 'right' }} /></td>
+                  <td className="right"><input type="number" min="0" step="0.01" value={it.unit_price} onChange={setItem(idx, 'unit_price')} style={{ width: 80, textAlign: 'right' }} /></td>
+                  <td className="right"><input type="number" min="0" step="0.01" value={it.discount} onChange={setItem(idx, 'discount')} style={{ width: 70, textAlign: 'right' }} /></td>
+                  <td className="right"><input type="number" min="0" step="0.01" value={it.gst_rate} onChange={setItem(idx, 'gst_rate')} style={{ width: 60, textAlign: 'right' }} /></td>
+                  <td className="right nowrap">{inr(it.taxable)}</td>
+                  <td className="right nowrap">{inr(it.cg)}</td>
+                  <td className="right nowrap">{inr(it.sg)}</td>
+                  <td className="right nowrap">{inr(it.ig)}</td>
+                  <td className="right nowrap">{inr(it.line)}</td>
+                  <td className="right"><button type="button" className="btn btn-sm btn-danger" onClick={() => removeItem(idx)}>×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <div className="row mt" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+          <div className="muted">Subtotal</div>
+          <div className="right nowrap">{inr(calc.subtotal)}</div>
+        </div>
+        <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+          <div className="muted">Discount</div>
+          <div className="right nowrap">- {inr(calc.discount)}</div>
+        </div>
+        {calc.cgst > 0 && (
+          <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+            <div className="muted">CGST</div><div className="right nowrap">{inr(calc.cgst)}</div>
+          </div>
+        )}
+        {calc.sgst > 0 && (
+          <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+            <div className="muted">SGST</div><div className="right nowrap">{inr(calc.sgst)}</div>
+          </div>
+        )}
+        {calc.igst > 0 && (
+          <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+            <div className="muted">IGST</div><div className="right nowrap">{inr(calc.igst)}</div>
+          </div>
+        )}
+        <div className="row" style={{ maxWidth: 420, marginLeft: 'auto', fontSize: 18, fontWeight: 700, marginTop: 6 }}>
+          <div>Grand Total</div>
+          <div className="right nowrap">{inr(calc.grand)}</div>
+        </div>
+      </div>
+
+      <div className="flex" style={{ justifyContent: 'flex-end' }}>
+        <button type="button" className="btn" onClick={runAiCheck} disabled={aiBusy || busy || form.items.length === 0 || !form.customer_id}>
+          {aiBusy ? 'Checking…' : 'Smart Check (AI)'}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={busy || aiBusy || form.items.length === 0 || !form.customer_id}>
+          {busy ? 'Saving…' : 'Save Invoice'}
+        </button>
+        <Link to="/invoices" className="btn">Cancel</Link>
+      </div>
+    </form>
+  );
+}

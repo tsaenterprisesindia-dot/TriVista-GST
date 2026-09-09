@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+
+# Secrets (NEVER commit)
+backend/.env
+
+# Runtime logs
+backend/data/
+*.log
+
+# Database dumps / backups (contain business data)
+backups/
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
