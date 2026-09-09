@@ -6,6 +6,8 @@ router.get('/dashboard', authenticate, c.dashboard);
 router.get('/sales', authenticate, c.salesReport);
 router.get('/gstr1', authenticate, c.gstr1);
 router.get('/gstr3b', authenticate, c.gstr3b);
+router.get('/trial-balance', authenticate, c.trialBalance);
+router.get('/aging', authenticate, c.aging);
 router.get('/export/csv', authenticate, c.exportCsv);
 router.get('/export/xml', authenticate, c.exportXml);
 
