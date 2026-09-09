@@ -12,7 +12,7 @@ export default function Integration() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
 
-  const [eway, setEway] = useState({ transporter_name: '', vehicle_no: '', transporter_gstin: '', gcn_no: '' });
+  const [eway, setEway] = useState({ transporter_name: '', vehicle_no: '', transporter_gstin: '', gcn_no: '', distance_km: '' });
   const [ewayPayload, setEwayPayload] = useState(null);
 
   const loadLogs = () => {
@@ -51,6 +51,18 @@ export default function Integration() {
     }
   };
 
+  const submitIrn = async () => {
+    setError('');
+    try {
+      const d = await api.post(`/integration/einvoice/${invoiceId}/submit`);
+      setSimIr(d);
+      setSaved(d.message);
+      loadLogs();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const generateEway = async () => {
     setError('');
     try {
@@ -82,6 +94,7 @@ export default function Integration() {
           <div className="flex">
             <button className="btn btn-primary" disabled={!invoiceId} onClick={generate}>Generate e-Invoice JSON</button>
             <button className="btn" disabled={!invoiceId} onClick={simulateIrn}>Simulate IRN</button>
+            <button className="btn btn-danger" disabled={!invoiceId} onClick={submitIrn}>Submit to IRP</button>
           </div>
           {payload && (
             <div className="field mt">
@@ -93,7 +106,13 @@ export default function Integration() {
           )}
           {simIr && (
             <div className="field mt">
-              <label>IRN Simulation Result</label>
+              <label>IRN Result</label>
+              {simIr.qr_url && (
+                <div style={{ marginBottom: 10, textAlign: 'center' }}>
+                  <img src={simIr.qr_url} alt="IRN QR" style={{ width: 170, height: 170, border: '1px solid #ddd', borderRadius: 8 }} />
+                  {simIr.irn && <div className="muted" style={{ marginTop: 6, fontSize: 12, wordBreak: 'break-all' }}>{simIr.irn}</div>}
+                </div>
+              )}
               <pre style={{ background: '#f8fafc', padding: 12, borderRadius: 8, overflow: 'auto', fontSize: 12 }}>
                 {JSON.stringify(simIr, null, 2)}
               </pre>
@@ -127,6 +146,10 @@ export default function Integration() {
           <div className="field">
             <label>GCN / LR No</label>
             <input value={eway.gcn_no} onChange={setE('gcn_no')} />
+          </div>
+          <div className="field">
+            <label>Distance (km)</label>
+            <input value={eway.distance_km} onChange={setE('distance_km')} type="number" placeholder="Required on 2nd leg of movement (Part-B)" />
           </div>
           <button className="btn btn-primary" disabled={!invoiceId} onClick={generateEway}>Generate e-Way Bill</button>
           {ewayPayload && (

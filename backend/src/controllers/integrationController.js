@@ -1,4 +1,5 @@
 const { getPool } = require('../db');
+const { audit } = require('../utils/audit');
 
 /**
  * Build e-Invoice payload conforming to GSTN 1.03 schema.
@@ -119,6 +120,7 @@ async function generateEinvoice(req, res, next) {
     const pool = getPool();
     const [ex] = await pool.query('SELECT * FROM einvoice_logs WHERE invoice_id=? ORDER BY id DESC LIMIT 1', [invId]);
     const payload = await buildEinvoicePayload(invId);
+    const [invRows] = await pool.query('SELECT invoice_number FROM invoices WHERE id=?', [invId]);
 
     if (!ex.length) {
       await pool.query(
@@ -131,6 +133,7 @@ async function generateEinvoice(req, res, next) {
     }
 
     // Sandbox URL hook (set INTEGRATION_EINVOICE_URL in .env). No external call without creds.
+    await audit(req, 'EINVOICE_GENERATE', 'invoice', invId, { invoice_number: invRows[0]?.invoice_number || null });
     res.json({
       message: 'e-Invoice JSON generated (GSTN 1.03). Submit via your IRP portal e.g. Wavez/Vayana/NSDL with your creds.',
       payload,
@@ -148,6 +151,7 @@ async function simulateIrn(req, res, next) {
     const invId = Number(req.params.id);
     const pool = getPool();
     const payload = await buildEinvoicePayload(invId);
+    const [invRows] = await pool.query('SELECT invoice_number FROM invoices WHERE id=?', [invId]);
     const irn = 'SANDBOX' + '2026' + String(invId).padStart(12, '0');
     const ack = 'ACK' + String(Math.floor(Math.random() * 9e8) + 1e8);
     await pool.query(
@@ -156,7 +160,77 @@ async function simulateIrn(req, res, next) {
       [invId, irn, ack, JSON.stringify(payload), JSON.stringify(payload)]
     );
     await pool.query("UPDATE invoices SET irn=? WHERE id=?", [irn, invId]);
+    await audit(req, 'EINVOICE_GENERATED', 'invoice', invId, { irn, invoice_number: invRows[0]?.invoice_number || null });
     res.json({ irn, ack_number: ack, message: 'Simulated IRN generated (sandbox).' });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * Submit Invoice to the real IRP (NSDL/Wavez/Vayana etc.) using QR-Salt-IRN
+ * style payload and store the returned IRN + QR code.
+ * Set IRP_ENDPOINT (+ optional IRP_AUTH) in backend/.env to go live.
+ */
+async function submitIrn(req, res, next) {
+  try {
+    const invId = Number(req.params.id);
+    const pool = getPool();
+    const payload = await buildEinvoicePayload(invId);
+    const [co] = await pool.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
+    const company = co[0] || {};
+
+    const endpoint = (process.env.IRP_ENDPOINT || '').trim();
+    if (!endpoint) {
+      return res.status(400).json({ error: 'IRP_ENDPOINT not configured. Run sandbox simulate for testing first.' });
+    }
+
+    const authHeader = (process.env.IRP_AUTH || '').trim();
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller
+      ? setTimeout(() => controller.abort(), 40000)
+      : null;
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(authHeader ? { Authorization: authHeader } : {}) },
+      body: JSON.stringify(payload),
+      signal: controller ? controller.signal : undefined,
+    });
+    if (timer) clearTimeout(timer);
+    const text = await resp.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch (e) { /* IRP may answer non-JSON on error */ }
+
+    const statusOk = String(data.Status) === '1' || (data.Irn || (data.EwbNo && payload.EwbDtls) || resp.ok && data.Irn);
+    if (!statusOk) {
+      await pool.query(
+        `INSERT INTO einvoice_logs (invoice_id,status,raw_request,raw_response) VALUES (?,'FAILED',?,?)`,
+        [invId, JSON.stringify(payload), text.slice(0, 4000)]
+      );
+      await audit(req, 'EINVOICE_FAIL', 'invoice', invId, { error: text.slice(0, 1000), invoice_number: null });
+      return res.status(502).json({ error: 'IRP submission failed', detail: text.slice(0, 1000) });
+    }
+
+    const irn = data.Irn || data.irn || '';
+    const ack = data.AckNo || data.ackNo || '';
+    const ackDate = data.AckDt || data.ackDt || new Date().toISOString().slice(0, 10);
+    const signed = data.SignedInvoice || JSON.stringify(data) || JSON.stringify(payload);
+
+    let qrUrl = null;
+    if (irn) {
+      const QRCode = require('qrcode');
+      const qrText = `I${irn}|S${company.gstin || ''}|B${payload.BuyerDtls.Gstin}|N${payload.DocDtls.No}|D${payload.DocDtls.Dt}`;
+      qrUrl = await QRCode.toDataURL(qrText).catch(() => null);
+    }
+
+    await pool.query(
+      `INSERT INTO einvoice_logs (invoice_id,irn,ack_number,ack_date,status,signed_invoice,raw_request,raw_response,qr_url)
+       VALUES (?,?,?,?, 'GENERATED',?,?,?,?)`,
+      [invId, irn || null, ack || null, ackDate, signed, JSON.stringify(payload), text.slice(0, 4000), qrUrl]
+    );
+    await pool.query('UPDATE invoices SET irn=? WHERE id=?', [irn || null, invId]);
+    await audit(req, 'EINVOICE_GENERATED', 'invoice', invId, { irn, invoice_number: inv.invoice_number });
+    res.json({ irn, ack_number: ack, ack_date: ackDate, qr_url: qrUrl, message: 'IRN generated and QR prepared.' });
   } catch (e) {
     next(e);
   }
@@ -189,18 +263,26 @@ async function generateEwaybill(req, res, next) {
     const inv = invRows[0];
     const [co] = await pool.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
     const company = co[0] || {};
-    const [items] = await pool.query('SELECT * FROM invoice_items WHERE invoice_id=?', [invId]);
+    const [items] = await pool.query(
+      `SELECT ii.*, p.weight_kg FROM invoice_items ii LEFT JOIN products p ON p.id=ii.product_id WHERE ii.invoice_id=?`,
+      [invId]
+    );
 
-    const totalWeight = items.reduce((s, it) => s + (Number(it.quantity) || 0) * 1.5, 0);
+    // Weight comes from the master product weight_kg when known, else item weight_.
+    const totalWeight = items.reduce((s, it) => {
+      const kg = Number(it.weight_kg) || Number(it.weight_kg) || 0;
+      return s + (Number(it.quantity) || 0) * kg;
+    }, 0);
 
     const payload = {
       Vers: 1,
       EwbNo: null,
       EwbDtls: {
         VehNo: b.vehicle_no || '',
+        Dist: Number(b.distance_km) || 0,
         FromPlace: company.city || '',
         FromPincode: company.pincode || '',
-        HsnWise: items.map((it) => ({ HsnCd: it.hsn_code || '', Qty: Number(it.quantity) || 0, Unit: 'KGS', TaxableVal: Number(it.taxable_value) || 0 })).filter((x)=>x.HsnCd),
+        HsnWise: items.map((it) => ({ HsnCd: it.hsn_code || '', Qty: Number(it.quantity) || 0, Unit: it.unit || 'KGS', TaxableVal: Number(it.taxable_value) || 0 })).filter((x)=>x.HsnCd),
         TotalValue: Number(inv.grand_total) || 0,
         TotKg: totalWeight,
         TransporterId: b.transporter_gstin || '',
@@ -221,6 +303,7 @@ async function generateEwaybill(req, res, next) {
        VALUES (?,'PENDING',?,?,?)`,
       [invId, b.transporter_name || null, b.vehicle_no || null, JSON.stringify(payload)]
     );
+    await audit(req, 'EWAYBILL_GENERATE', 'invoice', invId, { invoice_number: inv.invoice_number, distance_km: Number(b.distance_km) || 0 });
 
     res.json({
       message: 'e-Way Bill JSON prepared. Submit via GSTN e-Way Bill API or the official portal with your transporter token.',
@@ -244,4 +327,4 @@ async function ewaybillLogs(req, res, next) {
   }
 }
 
-module.exports = { buildEinvoicePayload, generateEinvoice, simulateIrn, einvoiceLogs, generateEwaybill, ewaybillLogs };
+module.exports = { buildEinvoicePayload, generateEinvoice, simulateIrn, submitIrn, einvoiceLogs, generateEwaybill, ewaybillLogs };

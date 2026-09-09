@@ -8,6 +8,7 @@ const empty = {
   name: '',
   company_name: '',
   gstin: '',
+  pan: '',
   phone: '',
   email: '',
   address_line1: '',
@@ -65,6 +66,7 @@ export default function Customers() {
       name: c.name,
       company_name: c.company_name,
       gstin: c.gstin,
+      pan: c.pan,
       phone: c.phone,
       email: c.email,
       address_line1: '',
@@ -143,6 +145,10 @@ export default function Customers() {
                 <input value={form.gstin} onChange={set('gstin')} placeholder="Optional" />
               </div>
               <div className="field">
+                <label>PAN</label>
+                <input value={form.pan} onChange={set('pan')} maxLength={10} placeholder="Optional — avoids 1% TCS" />
+              </div>
+              <div className="field">
                 <label>Phone</label>
                 <input value={form.phone} onChange={set('phone')} />
               </div>
@@ -211,6 +217,7 @@ export default function Customers() {
                 <th>Name</th>
                 <th>Company</th>
                 <th>GSTIN</th>
+                <th>PAN</th>
                 <th>Phone</th>
                 <th>City</th>
                 <th className="right">Balance Due</th>
@@ -226,6 +233,7 @@ export default function Customers() {
                   <td>{c.name}</td>
                   <td>{c.company_name || '—'}</td>
                   <td className="nowrap">{c.gstin || '—'}</td>
+                  <td className="nowrap">{c.pan || '—'}</td>
                   <td className="nowrap">{c.phone || '—'}</td>
                   <td>{c.city || '—'}</td>
                   <td className="right nowrap">

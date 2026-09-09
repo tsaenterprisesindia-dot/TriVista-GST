@@ -14,7 +14,10 @@ const accountingRoutes = require('./accounting');
 const integrationRoutes = require('./integration');
 const reconciliationRoutes = require('./reconciliation');
 const aiRoutes = require('./ai');
+const recurringRoutes = require('./recurring');
+const notificationsRoutes = require('./notifications');
 const publicApiRoutes = require('./publicApi');
+const auditRoutes = require('./audit');
 
 router.use('/auth', authRoutes);
 router.use('/products', productRoutes);
@@ -30,6 +33,9 @@ router.use('/accounting', accountingRoutes);
 router.use('/integration', integrationRoutes);
 router.use('/reconciliation', reconciliationRoutes);
 router.use('/ai', aiRoutes);
+router.use('/recurring', recurringRoutes);
+router.use('/notifications', notificationsRoutes);
 router.use('/apikeys', publicApiRoutes);
+router.use('/audit', auditRoutes);
 
 module.exports = router;

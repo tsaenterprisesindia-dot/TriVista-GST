@@ -1,4 +1,5 @@
 const { getPool } = require('../db');
+const { audit } = require('../utils/audit');
 
 // ------------- Categories -------------
 async function listCategories(_req, res, next) {
@@ -16,6 +17,7 @@ async function createCategory(req, res, next) {
     if (!name) return res.status(400).json({ error: 'Name is required.' });
     try {
       const [r] = await getPool().query('INSERT INTO categories (name,description) VALUES (?,?)', [name, description || null]);
+      await audit(req, 'CREATE', 'category', r.insertId, { name });
       res.status(201).json({ id: r.insertId, message: 'Category created.' });
     } catch (e) {
       if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Category already exists.' });
@@ -51,8 +53,8 @@ async function list(req, res, next) {
 
     const [rows] = await pool.query(
       `SELECT p.id,p.sku,p.barcode,p.name,p.description,p.category_id,c.name AS category_name,
-              p.hsn_code,p.hsn_id,p.gst_rate,p.unit,p.selling_price,p.purchase_price,p.mrp,p.min_stock,
-              p.is_service,p.is_active,p.created_at,
+              p.hsn_code,p.hsn_id,p.gst_rate,p.unit,p.selling_price,p.wholesale_price,p.purchase_price,p.mrp,p.min_stock,
+              p.weight_kg,p.is_service,p.is_active,p.created_at,
               IFNULL((SELECT SUM(
                  CASE WHEN sm.type='IN' THEN sm.quantity
                       WHEN sm.type='OUT' THEN -sm.quantity
@@ -112,13 +114,13 @@ async function create(req, res, next) {
     const [r] = await pool.query(
       `INSERT INTO products
        (sku,barcode,name,description,category_id,hsn_id,hsn_code,gst_rate,unit,
-        selling_price,purchase_price,mrp,min_stock,is_service,is_active)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        selling_price,wholesale_price,purchase_price,mrp,min_stock,weight_kg,is_service,is_active)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         b.sku || null, b.barcode || null, b.name, b.description || null, b.category_id || null, hsnId,
         b.hsn_code, Number(b.gst_rate) || 0, b.unit || 'PCS',
-        Number(b.selling_price) || 0, b.purchase_price ?? null, b.mrp || null,
-        b.min_stock || null, b.is_service ? 1 : 0, b.is_active === undefined ? 1 : b.is_active ? 1 : 0,
+        Number(b.selling_price) || 0, b.wholesale_price || null, b.purchase_price ?? null, b.mrp || null,
+        b.min_stock || null, b.weight_kg || null, b.is_service ? 1 : 0, b.is_active === undefined ? 1 : b.is_active ? 1 : 0,
       ]
     );
     // Opening stock movement
@@ -131,6 +133,7 @@ async function create(req, res, next) {
       );
     }
     res.status(201).json({ id: r.insertId, message: 'Product created.', hsnId });
+    await audit(req, 'CREATE', 'product', r.insertId, { name: b.name, sku: b.sku || null });
   } catch (e) {
     next(e);
   }
@@ -141,7 +144,7 @@ async function update(req, res, next) {
     const id = Number(req.params.id);
     const b = req.body || {};
     const pool = getPool();
-    const allowed = ['sku','barcode','name','description','category_id','hsn_id','hsn_code','gst_rate','unit','selling_price','purchase_price','mrp','min_stock','is_service','is_active'];
+    const allowed = ['sku','barcode','name','description','category_id','hsn_id','hsn_code','gst_rate','unit','selling_price','wholesale_price','purchase_price','mrp','min_stock','weight_kg','is_service','is_active'];
     const sets = [];
     const params = [];
     for (const f of allowed) {
@@ -153,6 +156,7 @@ async function update(req, res, next) {
     if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
     params.push(id);
     await pool.query(`UPDATE products SET ${sets.join(', ')} WHERE id=?`, params);
+    await audit(req, 'UPDATE', 'product', id, { fields: Object.fromEntries(allowed.filter((f) => b[f] !== undefined).map((f) => [f, b[f]])) });
     res.json({ message: 'Product updated.' });
   } catch (e) {
     next(e);
@@ -161,8 +165,27 @@ async function update(req, res, next) {
 
 async function remove(req, res, next) {
   try {
-    const [r] = await getPool().query('DELETE FROM products WHERE id=?', [Number(req.params.id)]);
+    const id = Number(req.params.id);
+    const pool = getPool();
+    // Listed product or one referenced by documents cannot be hard-deleted
+    // (Rule 46 / auditing): deactivate instead via is_active=0.
+    const [[ref]] = await pool.query(
+      `SELECT
+        (SELECT COUNT(*) FROM invoice_items WHERE product_id=?) +
+        (SELECT COUNT(*) FROM purchase_bill_items WHERE product_id=?) +
+        (SELECT COUNT(*) FROM stock_movements WHERE product_id=?) AS refs`,
+      [id, id, id]
+    );
+    const refs = Number(ref && ref.refs) || 0;
+    const [p] = await pool.query('SELECT name FROM products WHERE id=?', [id]);
+    if (refs > 0) {
+      await pool.query('UPDATE products SET is_active=0 WHERE id=?', [id]);
+      await audit(req, 'DEACTIVATE', 'product', id, { name: p[0]?.name || null, refs });
+      return res.json({ message: 'Product has transaction history - deactivated instead of deleted.', deactivated: true });
+    }
+    const [r] = await pool.query('DELETE FROM products WHERE id=?', [id]);
     if (!r.affectedRows) return res.status(404).json({ error: 'Product not found.' });
+    await audit(req, 'DELETE', 'product', id, { name: p[0]?.name || null });
     res.json({ message: 'Product deleted.' });
   } catch (e) {
     next(e);

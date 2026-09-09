@@ -56,6 +56,51 @@ export default function InvoiceView() {
     }
   };
 
+  const printReceipt = () => {
+    const pays = inv.payments || [];
+    const rows = pays.length
+      ? `<table style="width:100%;border-collapse:collapse;margin-top:10px">
+           <tr><th style="text-align:left;padding:4px;border-bottom:1px solid #999">Date</th>
+               <th style="text-align:right;padding:4px;border-bottom:1px solid #999">Mode</th>
+               <th style="text-align:right;padding:4px;border-bottom:1px solid #999">Amount</th></tr>
+           ${pays
+             .map(
+               (p) =>
+                 `<tr><td style="padding:4px">${p.date}</td><td style="padding:4px;text-align:right">${p.mode}</td><td style="padding:4px;text-align:right">${inr(p.amount)}</td></tr>`
+             )
+             .join('')}
+           <tr><td colspan="2" style="padding:4px;text-align:right"><strong>Total paid</strong></td>
+               <td style="padding:4px;text-align:right"><strong>${inr(inv.paid_amount)}</strong></td></tr>
+         </table>`
+      : `<div class="muted" style="margin-top:10px">No payments recorded yet.</div>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Payment Receipt</title>
+      <style>body{font-family:Arial,sans-serif;max-width:520px;margin:24px auto;padding:16px;color:#111}
+      .muted{color:#666;font-size:13px}h1{font-size:20px;margin:0}.right{text-align:right}
+      .sep{border-top:2px solid #111;margin:12px 0}</style></head><body>
+      <h1>${company.company_name || 'Company'}</h1>
+      <div class="muted">${company.address_line1 || ''} ${company.city || ''} ${company.state || ''} ${company.pincode || ''}</div>
+      ${company.gstin ? `<div class="muted">GSTIN: ${company.gstin}</div>` : ''}
+      <div class="muted">${company.phone || ''} ${company.email || ''}</div>
+      <div class="sep"></div>
+      <div style="text-align:center;font-weight:bold;letter-spacing:1px">PAYMENT RECEIPT</div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <div class="muted">Invoice: <strong style="color:#111">${inv.invoice_number}</strong></div>
+        <div class="muted">Date: ${new Date().toISOString().slice(0, 10)}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px">
+        <div>Received from: <strong>${inv.customer_name || 'Walk-in Customer'}</strong></div>
+        <div class="right">GSTIN: ${inv.customer_gstin || 'URP'}</div>
+      </div>
+      ${rows}
+      <div style="margin-top:10px;font-size:13px" class="muted">Thank you for your business!</div>
+      <script>setTimeout(function(){window.focus();window.print();},250);<\\/script>
+      </body></html>`;
+    const w = window.open('', '_blank', 'width=600,height=800');
+    if (!w) { alert('Please allow pop-ups to print the receipt.'); return; }
+    w.document.write(html);
+    w.document.close();
+  };
+
   return (
     <>
       {msg && <div className="success-banner">{msg}</div>}
@@ -69,6 +114,9 @@ export default function InvoiceView() {
           </div>
           <div className="flex">
             <button className="btn btn-sm" onClick={() => window.print()}>Print / Save PDF</button>
+            {(inv.payments || []).length > 0 && (
+              <button className="btn btn-sm" onClick={printReceipt}>Payment Receipt</button>
+            )}
             <Link className="btn btn-sm" to="/invoices">Back</Link>
           </div>
         </div>
@@ -115,6 +163,7 @@ export default function InvoiceView() {
             <div><strong>{inv.invoice_number}</strong></div>
             <div className="muted">Date: {inv.invoice_date}</div>
             {inv.irn && <div className="muted">IRN: {inv.irn}</div>}
+            {inv.qr_url && <img src={inv.qr_url} alt="IRN QR" style={{ width: 80, height: 80, marginTop: 6, border: '1px solid #ddd', borderRadius: 6 }} />}
             <div className="muted">Type: {inv.invoice_type} · {isInterstate ? 'Inter-state' : 'Intra-state'}</div>
           </div>
         </div>
@@ -177,6 +226,7 @@ export default function InvoiceView() {
           <TaxBreakupLine label="SGST" value={inv.sgst_total} />
           <TaxBreakupLine label="IGST" value={inv.igst_total} />
           <TaxBreakupLine label="Cess" value={inv.cess_total} />
+          {Number(inv.tcs_amount) > 0 && <TaxBreakupLine label="TCS (u/s 206C(1H))" value={inv.tcs_amount} />}
           <TaxBreakupLine label="Round Off" value={inv.round_off} />
           <div className="row" style={{ borderTop: '2px solid #111c34', paddingTop: 6, fontWeight: 700, fontSize: 16 }}>
             <div>Grand Total</div>

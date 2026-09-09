@@ -17,6 +17,7 @@ export default function Billing() {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [ai, setAi] = useState(null);
+  const [wholesale, setWholesale] = useState(false);
 
   const [form, setForm] = useState(() => ({
     customer_id: '',
@@ -27,17 +28,28 @@ export default function Billing() {
     notes: '',
     items: [],
   }));
+  const [allowBackdate, setAllowBackdate] = useState(false);
 
   useEffect(() => {
     api.get('/customers?limit=100').then((d) => setCustomers(d.data || [])).catch(() => {});
     api.get('/products?limit=200').then((d) => setProducts(d.data || [])).catch(() => {});
-    api.get('/company').then(setCompany).catch(() => {});
+    api.get('/company').then((d) => {
+      setCompany(d);
+      if (d.business_type === 'wholesale') setWholesale(true);
+    }).catch(() => {});
   }, []);
 
   const customer = customers.find((c) => String(c.id) === String(form.customer_id));
   const companyState = company?.state_code || '29';
   const supplyState = form.place_of_supply || customer?.state_code || companyState;
   const isInterstate = String(supplyState) !== String(companyState);
+
+  const localToday = () => {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+  const isBackdated = form.invoice_date !== localToday();
+  const needsEinvoice = !!company?.e_invoice_enabled && Number(company?.aggregate_turnover_crores || 0) >= 5 && !!customer?.gstin;
 
   const visibleProducts = products.filter(
     (p) => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.sku || '').toLowerCase().includes(search.toLowerCase())
@@ -49,6 +61,7 @@ export default function Billing() {
       if (hit) {
         return { ...f, items: f.items.map((i) => (i.product_id === p.id ? { ...i, quantity: r2(i.quantity + 1) } : i)) };
       }
+      const rate = wholesale ? Number(p.wholesale_price || p.selling_price) : Number(p.selling_price);
       return {
         ...f,
         items: [
@@ -59,7 +72,7 @@ export default function Billing() {
             hsn_code: p.hsn_code,
             gst_rate: Number(p.gst_rate) || 0,
             quantity: 1,
-            unit_price: Number(p.selling_price) || 0,
+            unit_price: rate,
             discount: 0,
           },
         ],
@@ -104,6 +117,7 @@ export default function Billing() {
     payment_mode: form.payment_mode,
     paid_amount: Number(form.paid_amount) || 0,
     notes: form.notes || null,
+    allow_backdate: isBackdated ? allowBackdate : undefined,
     items: form.items.map((it) => ({
       product_id: it.product_id,
       item_name: it.item_name,
@@ -135,6 +149,11 @@ export default function Billing() {
     setAi(null);
     setBusy(true);
     try {
+      if (isBackdated && !allowBackdate) {
+        setError('This invoice is backdated. Confirm the date in the warning box above to proceed.');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
       const v = await api.post('/ai/validate', payload());
       if (v.issues.some((x) => x.level === 'error')) {
         setAi(v);
@@ -154,6 +173,20 @@ export default function Billing() {
   return (
     <form onSubmit={submit}>
       {error && <div className="error-banner">{error}</div>}
+
+      {needsEinvoice && (
+        <div className="banner-warn" style={{ border: '1px solid var(--amber)', background: '#fff8e6', padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+          e-Invoicing is enabled and this customer has a GSTIN — a valid IRN must be generated for this invoice
+          via <Link to="/integration">e-Invoice / e-Way</Link> within 10 days.
+        </div>
+      )}
+
+      {isBackdated && (
+        <div className="banner-warn" style={{ border: '1px solid var(--amber)', background: '#fff8e6', padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+          <strong>Backdated invoice:</strong> the date is earlier than today. Backdated entries are recorded in the
+          audit trail. <label style={{ marginLeft: 10 }}><input type="checkbox" checked={allowBackdate} onChange={(e) => setAllowBackdate(e.target.checked)} style={{ width: 'auto' }} /> I confirm this date is correct</label>
+        </div>
+      )}
 
       {ai && (
         <div className="card" style={{ borderColor: ai.ok ? 'var(--green)' : 'var(--amber)' }}>
@@ -235,6 +268,19 @@ export default function Billing() {
           {customer?.outstanding_balance > 0 && (
             <div className="badge badge-amber">Outstanding: {inr(customer.outstanding_balance)}</div>
           )}
+          {customer?.credit_limit ? (
+            (() => {
+              const used = Number(customer.outstanding_balance) || 0;
+              const remaining = r2(Number(customer.credit_limit) - used);
+              const willExceed = remaining < calc.grand;
+              return (
+                <div className={willExceed ? 'badge badge-red' : 'badge badge-blue'} style={{ display: 'block', marginTop: 6 }}>
+                  Credit limit {inr(customer.credit_limit)} · Used {inr(used)} · Left {inr(remaining)}
+                  {willExceed && <div className="mt" style={{ color: 'inherit' }}>This invoice exceeds remaining credit by {inr(calc.grand - remaining)} — review before saving.</div>}
+                </div>
+              );
+            })()
+          ) : null}
           <div className="muted mt" style={{ fontSize: 12 }}>
             Invoice type: {customer?.gstin ? 'B2B' : 'B2C'} · GSTIN: {customer?.gstin || 'Not registered'}
           </div>
@@ -242,7 +288,13 @@ export default function Billing() {
       </div>
 
       <div className="card">
-        <div className="card-title">Products</div>
+        <div className="card-title">
+          <span>Products</span>
+          <label className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={wholesale} onChange={(e) => setWholesale(e.target.checked)} style={{ width: 'auto' }} />
+            Use wholesale prices
+          </label>
+        </div>
         <div className="field">
           <input placeholder="Search products by name or SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
@@ -253,7 +305,9 @@ export default function Billing() {
             {visibleProducts.slice(0, 40).map((p) => (
               <button type="button" className="btn" key={p.id} onClick={() => addItem(p)} style={{ justifyContent: 'space-between' }}>
                 <span>{p.name}</span>
-                <span className="muted nowrap">{inr(p.selling_price)}</span>
+                <span className="muted nowrap">
+                  {p.wholesale_price ? `${inr(p.wholesale_price)} w / ${inr(p.selling_price)} r` : inr(p.selling_price)}
+                </span>
               </button>
             ))}
           </div>

@@ -65,4 +65,18 @@ app.listen(PORT, () => {
   console.log(`Health check: http://localhost:${PORT}/api/health\n`);
 });
 
+// Recurring invoice automation (daily, ~00:05)
+const { runDue } = require('./controllers/recurringController');
+const runRecurring = async () => {
+  try {
+    const r = await runDue();
+    if (r.created.length) console.log(`[recurring] generated ${r.created.length} invoice(s)`);
+  } catch (e) {
+    console.error('[recurring]', e.message);
+  }
+};
+const MIN = 60 * 1000;
+setTimeout(runRecurring, 5 * MIN);
+setInterval(runRecurring, 24 * 60 * MIN);
+
 module.exports = app;

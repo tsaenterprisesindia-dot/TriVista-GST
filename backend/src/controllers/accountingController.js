@@ -1,6 +1,8 @@
 const { getPool } = require('../db');
 const { splitGst, round2 } = require('../utils/gst');
 const { pad } = require('../utils/helpers');
+const { computeTds } = require('../utils/tds');
+const { audit } = require('../utils/audit');
 
 /**
  * Create a Purchase Bill (inward supply). Increases stock, records GST input.
@@ -76,16 +78,22 @@ async function createPurchase(req, res, next) {
       }
     }
 
+    // TDS u/s 194Q on the FY-cumulative purchase value above the threshold
+    const tdsAmount = await computeTds(
+      conn, vendor.id, b.bill_date || new Date().toISOString().slice(0, 10),
+      round2(subtotal - discountTotal), 0, company
+    );
+
     const [ins] = await conn.query(
       `INSERT INTO purchase_bills
        (bill_number,bill_date,due_date,vendor_id,vendor_name,vendor_gstin,place_of_supply,is_interstate,status,
-        subtotal,discount,cgst_total,sgst_total,igst_total,cess_total,tax_total,grand_total,paid_amount,balance_due,notes,created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        subtotal,discount,cgst_total,sgst_total,igst_total,cess_total,tax_total,grand_total,tds_amount,paid_amount,balance_due,notes,created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         billNumber, b.bill_date || new Date().toISOString().slice(0, 10), b.due_date || null,
         vendor.id, vendor.name, vendor.gstin || null, placeOfSupply, isInterstate ? 1 : 0, 'PENDING',
         round2(subtotal), round2(discountTotal), round2(cgstTotal), round2(sgstTotal), round2(igstTotal),
-        round2(cessTotal), round2(taxTotal), round2(grandTotal), 0, round2(grandTotal), b.notes || null, req.user.id,
+        round2(cessTotal), round2(taxTotal), round2(grandTotal), tdsAmount, 0, round2(grandTotal), b.notes || null, req.user.id,
       ]
     );
     const billId = ins.insertId;
@@ -128,6 +136,7 @@ async function createPurchase(req, res, next) {
     );
 
     await conn.commit();
+    await audit(req, 'CREATE', 'purchase_bill', billId, { bill_number: billNumber, vendor_id: vendor.id, grand_total: round2(grandTotal), tds_amount: tdsAmount });
     res.status(201).json({ id: billId, bill_number: billNumber, grand_total: round2(grandTotal), message: 'Purchase bill created.' });
   } catch (e) {
     await conn.rollback();
@@ -190,6 +199,7 @@ async function payPurchase(req, res, next) {
     const balance = round2(Number(bill.grand_total) - newPaid);
     const status = balance === 0 ? 'PAID' : 'PARTIAL';
     await pool.query('UPDATE purchase_bills SET paid_amount=?, balance_due=?, status=? WHERE id=?', [newPaid, balance, status, id]);
+    await audit(req, 'PAY', 'payment', id, { amount: pay, mode: mode || 'BANK', bill_number: bill.bill_number });
     res.json({ message: 'Payment recorded.', balance_due: balance });
   } catch (e) {
     next(e);

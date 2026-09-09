@@ -83,9 +83,33 @@ CREATE TABLE `company_settings` (
   `bank_ifsc` VARCHAR(20) DEFAULT NULL,
   `gst_tax_preference` ENUM('exclusive','inclusive') NOT NULL DEFAULT 'exclusive',
   `round_off` TINYINT(1) NOT NULL DEFAULT 1,
+  `business_type` ENUM('retail','wholesale','services','mixed') NOT NULL DEFAULT 'mixed',
+  `e_invoice_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  `aggregate_turnover_crores` DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+  `apply_tds` TINYINT(1) NOT NULL DEFAULT 0,
+  `apply_tcs` TINYINT(1) NOT NULL DEFAULT 0,
+  `tds_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.10,
+  `tcs_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.10,
+  `tds_threshold` DECIMAL(14,2) NOT NULL DEFAULT 5000000.00,
+  `tcs_threshold` DECIMAL(14,2) NOT NULL DEFAULT 5000000.00,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- HSN / SAC Master (GST classification & rates)
+-- ------------------------------------------------------------
+-- ------------------------------------------------------------
+-- Per-financial-year invoice series (Rule 46 fresh series per FY)
+-- ------------------------------------------------------------
+CREATE TABLE `invoice_series` (
+  `fy` VARCHAR(6) NOT NULL,
+  `series_type` VARCHAR(20) NOT NULL DEFAULT 'SALES',
+  `last_number` INT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`fy`,`series_type`)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
@@ -133,9 +157,11 @@ CREATE TABLE `products` (
   `gst_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
   `unit` VARCHAR(30) DEFAULT 'PCS',
   `selling_price` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `wholesale_price` DECIMAL(14,2) DEFAULT NULL,
   `purchase_price` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `mrp` DECIMAL(14,2) DEFAULT NULL,
   `min_stock` DECIMAL(14,2) DEFAULT NULL,
+  `weight_kg` DECIMAL(10,3) DEFAULT NULL,
   `is_service` TINYINT(1) NOT NULL DEFAULT 0,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -176,6 +202,7 @@ CREATE TABLE `customers` (
   `name` VARCHAR(190) NOT NULL,
   `company_name` VARCHAR(190) DEFAULT NULL,
   `gstin` VARCHAR(15) DEFAULT NULL,
+  `pan` VARCHAR(10) DEFAULT NULL,
   `phone` VARCHAR(20) DEFAULT NULL,
   `email` VARCHAR(190) DEFAULT NULL,
   `address_line1` VARCHAR(255) DEFAULT NULL,
@@ -204,6 +231,7 @@ CREATE TABLE `vendors` (
   `vendor_code` VARCHAR(40) DEFAULT NULL,
   `name` VARCHAR(190) NOT NULL,
   `gstin` VARCHAR(15) DEFAULT NULL,
+  `pan` VARCHAR(10) DEFAULT NULL,
   `phone` VARCHAR(20) DEFAULT NULL,
   `email` VARCHAR(190) DEFAULT NULL,
   `address_line1` VARCHAR(255) DEFAULT NULL,
@@ -281,6 +309,7 @@ CREATE TABLE `invoices` (
   `paid_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `balance_due` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `payment_mode` ENUM('CASH','CARD','UPI','BANK','CREDIT','OTHER') DEFAULT 'CREDIT',
+  `tcs_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `notes` TEXT DEFAULT NULL,
   `irn` VARCHAR(64) DEFAULT NULL,
   `created_by` INT UNSIGNED DEFAULT NULL,
@@ -406,6 +435,7 @@ CREATE TABLE `purchase_bills` (
   `grand_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `paid_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `balance_due` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `tds_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `notes` TEXT DEFAULT NULL,
   `created_by` INT UNSIGNED DEFAULT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -448,7 +478,7 @@ CREATE TABLE `einvoice_logs` (
   `irn` VARCHAR(64) DEFAULT NULL,
   `ack_number` VARCHAR(64) DEFAULT NULL,
   `ack_date` DATETIME DEFAULT NULL,
-  `qr_url` VARCHAR(300) DEFAULT NULL,
+  `qr_url` TEXT DEFAULT NULL,
   `signed_invoice` JSON DEFAULT NULL,
   `status` ENUM('PENDING','GENERATED','FAILED') NOT NULL DEFAULT 'PENDING',
   `raw_request` JSON DEFAULT NULL,
@@ -515,6 +545,33 @@ CREATE TABLE `reconciliation_rows` (
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
+-- Recurring / subscription invoices (Services)
+-- ------------------------------------------------------------
+CREATE TABLE `recurring_invoices` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `customer_id` INT UNSIGNED NOT NULL,
+  `customer_name` VARCHAR(190) DEFAULT NULL,
+  `customer_gstin` VARCHAR(15) DEFAULT NULL,
+  `title` VARCHAR(190) NOT NULL,
+  `hsn_code` VARCHAR(20) DEFAULT NULL,
+  `gst_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `unit` VARCHAR(30) DEFAULT 'PCS',
+  `quantity` DECIMAL(14,2) NOT NULL DEFAULT 1.00,
+  `unit_price` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `frequency` ENUM('MONTHLY','HALF_YEARLY','QUARTERLY','YEARLY') NOT NULL DEFAULT 'MONTHLY',
+  `next_run_date` DATE NOT NULL,
+  `last_run_date` DATE DEFAULT NULL,
+  `payment_mode` ENUM('CREDIT','CASH','CARD','UPI','BANK') NOT NULL DEFAULT 'CREDIT',
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `notes` VARCHAR(255) DEFAULT NULL,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_recurring_cust` (`customer_id`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
 -- AI assistant settings + prompt history (pluggable LLM or rules)
 -- ------------------------------------------------------------
 CREATE TABLE `ai_settings` (
@@ -542,6 +599,24 @@ CREATE TABLE `audit_logs` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_audit_user` (`user_id`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Notifications (in-app alerts: receivables, payables, stock)
+-- ------------------------------------------------------------
+CREATE TABLE `notifications` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `type` VARCHAR(40) NOT NULL,
+  `reference_id` INT UNSIGNED DEFAULT NULL,
+  `title` VARCHAR(190) NOT NULL,
+  `message` VARCHAR(500) DEFAULT NULL,
+  `severity` ENUM('info','warning','important') NOT NULL DEFAULT 'info',
+  `link` VARCHAR(190) DEFAULT NULL,
+  `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_notif_type_ref` (`type`,`reference_id`),
+  KEY `idx_notif_read` (`is_read`)
 ) ENGINE=InnoDB;
 
 -- ============================================================

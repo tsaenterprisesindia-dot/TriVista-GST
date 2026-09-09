@@ -1,6 +1,8 @@
 const { getPool } = require('../db');
 const { splitGst, round2 } = require('../utils/gst');
-const { buildInvoiceNumber } = require('../utils/helpers');
+const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
+const { computeTcs } = require('../utils/tds');
+const { audit } = require('../utils/audit');
 
 /**
  * Sell from POS: creates a paid invoice, deducts stock, returns invoice details.
@@ -42,11 +44,7 @@ async function posSale(req, res, next) {
     const placeOfSupply = customer.state_code || companyState;
     const isInterstate = String(placeOfSupply) !== String(companyState);
 
-    await conn.query(
-      'UPDATE company_settings SET invoice_start_number = invoice_start_number + 1 ORDER BY id LIMIT 1'
-    );
-    const seq = Number(company.invoice_start_number || 0) + 1;
-    const invoiceNumber = buildInvoiceNumber(company.invoice_prefix || 'INV', seq);
+    const invoiceNumber = await allocateInvoiceNumber(conn, company, new Date().toISOString().slice(0, 10));
 
     let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
 
@@ -96,19 +94,24 @@ async function posSale(req, res, next) {
     }
     grandTotal = round2(grandTotal);
 
+    const tcsAmount = await computeTcs(
+      conn, customer.id, new Date().toISOString().slice(0, 10),
+      round2(subtotal - discountTotal), 0, company
+    );
+
     const [ins] = await conn.query(
       `INSERT INTO invoices
        (invoice_number,invoice_date,customer_id,customer_name,status,subtotal,discount,
         cgst_total,sgst_total,igst_total,cess_total,tax_total,round_off,grand_total,
-        paid_amount,balance_due,payment_mode,notes,created_by,place_of_supply,is_interstate,invoice_type)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        paid_amount,balance_due,payment_mode,tcs_amount,notes,created_by,place_of_supply,is_interstate,invoice_type)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         invoiceNumber, new Date().toISOString().slice(0, 10), customer.id, customer.name,
         'PAID', round2(subtotal), round2(discountTotal),
         round2(cgstTotal), round2(sgstTotal), round2(igstTotal), round2(cessTotal),
         round2(taxTotal), roundOff, grandTotal,
         grandTotal, 0,
-        b.payment_mode || 'CASH', b.notes || 'POS sale', req.user.id,
+        b.payment_mode || 'CASH', tcsAmount, b.notes || 'POS sale', req.user.id,
         placeOfSupply, isInterstate ? 1 : 0, customer.gstin ? 'B2B' : 'B2C',
       ]
     );
@@ -139,6 +142,7 @@ async function posSale(req, res, next) {
     );
 
     await conn.commit();
+    await audit(req, 'CREATE', 'invoice', invoiceId, { invoice_number: invoiceNumber, customer_id: customer.id, source: 'POS', grand_total: grandTotal });
 
     const [full] = await conn.query(
       `SELECT i.*, c.name AS customer_company, c.gstin AS customer_gstin

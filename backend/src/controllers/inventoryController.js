@@ -1,5 +1,6 @@
 const { getPool } = require('../db');
 const { query } = require('../db');
+const { audit } = require('../utils/audit');
 
 /**
  * Stock on hand per product (reactive, computed from movements).
@@ -68,11 +69,13 @@ async function addMovement(req, res, next) {
         return res.status(400).json({ error: `Insufficient stock. Only ${cur[0].stock} available.` });
       }
     }
+    const [pname] = await pool.query('SELECT name FROM products WHERE id=?', [product_id]);
     const [r] = await pool.query(
       `INSERT INTO stock_movements (product_id,type,quantity,unit_cost,note,created_by)
        VALUES (?,?,?,?,?,?)`,
       [product_id, type, qty, unit_cost || null, note || null, req.user.id]
     );
+    await audit(req, type, 'stock', r.insertId, { product_id, product_name: pname[0]?.name || null, quantity: qty, unit_cost: unit_cost || null, note: note || null });
     // If OUT update invoice reference not handled here (invoice flow does it directly)
     res.status(201).json({ id: r.insertId, message: 'Stock movement recorded.' });
   } catch (e) {

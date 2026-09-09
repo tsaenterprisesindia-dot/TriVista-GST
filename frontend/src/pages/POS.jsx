@@ -16,6 +16,7 @@ export default function POS() {
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [wholesale, setWholesale] = useState(false);
 
   useEffect(() => {
     api.get('/products?limit=300').then((d) => setProducts(d.data || [])).catch((e) => setError(e.message));
@@ -32,7 +33,7 @@ export default function POS() {
       if (hit) {
         return prev.map((i) => (i.product_id === p.id ? { ...i, quantity: r2(i.quantity + 1) } : i));
       }
-      return [...prev, { product_id: p.id, item_name: p.name, hsn_code: p.hsn_code, gst_rate: Number(p.gst_rate) || 0, quantity: 1, unit_price: Number(p.selling_price) || 0 }];
+      return [...prev, { product_id: p.id, item_name: p.name, hsn_code: p.hsn_code, gst_rate: Number(p.gst_rate) || 0, quantity: 1, unit_price: Number(wholesale ? p.wholesale_price || p.selling_price : p.selling_price) || 0 }];
     });
   };
 
@@ -95,7 +96,13 @@ export default function POS() {
       <div className="grid-2">
         <div className="card">
           <div className="card-title">Products</div>
-          <input placeholder="Search products / barcode / SKU" value={search} onChange={(e) => setSearch(e.target.value)} className="mb" />
+          <div className="flex mb">
+            <input placeholder="Search products / barcode / SKU" value={search} onChange={(e) => setSearch(e.target.value)} className="mb" style={{ marginBottom: 0, flex: 1 }} />
+            <label className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={wholesale} onChange={(e) => setWholesale(e.target.checked)} style={{ width: 'auto' }} />
+              Wholesale
+            </label>
+          </div>
           {visible.length === 0 ? (
             <div className="empty">No products match.</div>
           ) : (
@@ -103,7 +110,7 @@ export default function POS() {
               {visible.slice(0, 60).map((p) => (
                 <button type="button" className="btn" key={p.id} onClick={() => addItem(p)} style={{ justifyContent: 'space-between' }}>
                   <span>{p.name}</span>
-                  <span className="muted nowrap">{inr(p.selling_price)}</span>
+                  <span className="muted nowrap">{p.wholesale_price ? (wholesale ? inr(p.wholesale_price) : `${inr(p.selling_price)} / ${inr(p.wholesale_price)}w`) : inr(p.selling_price)}</span>
                 </button>
               ))}
             </div>

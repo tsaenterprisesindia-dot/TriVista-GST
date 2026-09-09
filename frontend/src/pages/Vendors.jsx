@@ -7,6 +7,7 @@ const inr = (n) =>
 const empty = {
   name: '',
   gstin: '',
+  pan: '',
   phone: '',
   email: '',
   address_line1: '',
@@ -56,6 +57,7 @@ export default function Vendors() {
     setForm({
       name: v.name,
       gstin: v.gstin,
+      pan: v.pan,
       phone: v.phone,
       email: v.email,
       address_line1: '',
@@ -116,6 +118,10 @@ export default function Vendors() {
                 <input value={form.gstin} onChange={set('gstin')} />
               </div>
               <div className="field">
+                <label>PAN</label>
+                <input value={form.pan} onChange={set('pan')} maxLength={10} placeholder="Optional — avoids 5% TDS" />
+              </div>
+              <div className="field">
                 <label>Phone</label>
                 <input value={form.phone} onChange={set('phone')} />
               </div>
@@ -165,6 +171,7 @@ export default function Vendors() {
                 <th>Code</th>
                 <th>Name</th>
                 <th>GSTIN</th>
+                <th>PAN</th>
                 <th>Phone</th>
                 <th>Email</th>
                 <th>City</th>
@@ -178,6 +185,7 @@ export default function Vendors() {
                   <td className="nowrap">{v.vendor_code || '—'}</td>
                   <td>{v.name}</td>
                   <td className="nowrap">{v.gstin || '—'}</td>
+                  <td className="nowrap">{v.pan || '—'}</td>
                   <td className="nowrap">{v.phone || '—'}</td>
                   <td>{v.email || '—'}</td>
                   <td>{v.city || '—'}</td>

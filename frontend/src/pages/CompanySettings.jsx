@@ -23,6 +23,15 @@ const fields = [
   'bank_ifsc',
   'gst_tax_preference',
   'round_off',
+  'business_type',
+  'e_invoice_enabled',
+  'aggregate_turnover_crores',
+  'apply_tds',
+  'apply_tcs',
+  'tds_rate',
+  'tcs_rate',
+  'tds_threshold',
+  'tcs_threshold',
 ];
 
 export default function CompanySettings() {
@@ -30,6 +39,8 @@ export default function CompanySettings() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
   const [loading, setLoading] = useState(true);
+  const [backups, setBackups] = useState([]);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     api
@@ -41,6 +52,10 @@ export default function CompanySettings() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    api
+      .get('/company/backups')
+      .then((list) => setBackups(list || []))
+      .catch(() => {});
   }, []);
 
   const set = (k) => (e) => {
@@ -61,6 +76,56 @@ export default function CompanySettings() {
   };
 
   if (loading) return <div>Loading…</div>;
+
+  const clearData = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaved('');
+    const pw = e.target.password.value;
+    if (!confirm('This will permanently delete ALL invoices, bills, products, stock, customers, vendors, payments, logs, transactions and API keys (including demo data).\n\nYour login, company profile, chart of accounts and HSN masters will be kept. This cannot be undone.')) return;
+    try {
+      await api.post('/company/clear-data', { password: pw });
+      setSaved('All business & demo data cleared. Refreshing…');
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const doBackup = async () => {
+    setBusy(true);
+    setError('');
+    setSaved('');
+    try {
+      const r = await api.get('/company/backup');
+      setSaved(`Backup created: ${r.file}`);
+      setBackups(await api.get('/company/backups'));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doRestore = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaved('');
+    const pw = e.target.password.value;
+    const file = e.target.file.value;
+    if (!file) return setError('Choose a backup file to restore.');
+    if (!confirm(`Restore database from "${file}"? This overwrites all current data with the backup contents, and cannot be undone.\n\nTake a fresh backup first if unsure.`)) return;
+    setBusy(true);
+    try {
+      const r = await api.post('/company/restore', { file, password: pw });
+      setSaved(`${r.message} Reloading…`);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <>
@@ -156,6 +221,18 @@ export default function CompanySettings() {
                 Round Off
               </label>
             </div>
+            <div className="field">
+              <label>Business Type</label>
+              <select value={form.business_type} onChange={set('business_type')}>
+                <option value="retail">Products (Retail Sale)</option>
+                <option value="wholesale">Products (Wholesale)</option>
+                <option value="services">Services</option>
+                <option value="mixed">Products &amp; Services (Retail + Wholesale)</option>
+              </select>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Adapts the menu &amp; flow: Services hides Inventory/Products; Products shows stock.
+              </div>
+            </div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <label>Invoice Footer Note</label>
               <textarea value={form.invoice_footer_note} onChange={set('invoice_footer_note')} rows={2} />
@@ -181,8 +258,132 @@ export default function CompanySettings() {
           </div>
         </div>
 
+        <div className="card">
+          <div className="card-title">Compliance (TDS / TCS / e-Invoice)</div>
+          <div className="grid-3">
+            <div className="field">
+              <label>
+                <input type="checkbox" checked={!!form.e_invoice_enabled} onChange={set('e_invoice_enabled')} style={{ width: 'auto' }} />{' '}
+                e-Invoicing Enabled (IRN required)
+              </label>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                10+ days old un-IRN invoices generate a compliance alert.
+              </div>
+            </div>
+            <div className="field">
+              <label>Aggregate Turnover (₹ Crores)</label>
+              <input value={form.aggregate_turnover_crores} onChange={set('aggregate_turnover_crores')} type="number" step="0.01" />
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                ≥ ₹5 cr → e-invoicing / e-way bill mandate.
+              </div>
+            </div>
+            <div className="field">
+              <label>
+                <input type="checkbox" checked={!!form.apply_tds} onChange={set('apply_tds')} style={{ width: 'auto' }} />{' '}
+                Deduct TDS (Sec 194Q – 0.1% purchases)
+              </label>
+            </div>
+            <div className="field">
+              <label>
+                <input type="checkbox" checked={!!form.apply_tcs} onChange={set('apply_tcs')} style={{ width: 'auto' }} />{' '}
+                Collect TCS (Sec 206C(1H) – 0.1% sales)
+              </label>
+            </div>
+            <div className="field">
+              <label>TDS Rate (%)</label>
+              <input value={form.tds_rate} onChange={set('tds_rate')} type="number" step="0.01" />
+            </div>
+            <div className="field">
+              <label>TCS Rate (%)</label>
+              <input value={form.tcs_rate} onChange={set('tcs_rate')} type="number" step="0.01" />
+            </div>
+            <div className="field">
+              <label>TDS Threshold (₹)</label>
+              <input value={form.tds_threshold} onChange={set('tds_threshold')} type="number" />
+            </div>
+            <div className="field">
+              <label>TCS Threshold (₹)</label>
+              <input value={form.tcs_threshold} onChange={set('tcs_threshold')} type="number" />
+            </div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <div className="muted" style={{ fontSize: 12 }}>
+                TDS/TCS apply on the portion of a single transaction above the threshold (per customer/vendor per FY). When no PAN is on file, TCS is charged at 1.0% (Sec 206CC) and TDS at 5.0% (Sec 206AA). Values are reported in GSTR 27EQ / 26Q export.
+              </div>
+            </div>
+          </div>
+        </div>
+
         <button className="btn btn-primary" type="submit">Save Settings</button>
       </form>
+
+      <div className="card" style={{ marginTop: '16px' }}>
+        <div className="card-title">Backup &amp; Restore</div>
+        <p style={{ marginBottom: '10px', fontSize: '13px' }}>
+          Keep a full database snapshot before major changes. Restore overwrites all current data — a password is
+          required and a fresh backup is recommended first.
+        </p>
+        <div className="flex" style={{ gap: 12, marginBottom: '12px' }}>
+          <button className="btn" type="button" onClick={doBackup} disabled={busy}>
+            {busy ? 'Working…' : 'Create Backup'}
+          </button>
+        </div>
+        {backups.length > 0 && (
+          <div className="table-wrap" style={{ marginBottom: '14px' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Size (KB)</th>
+                  <th>Taken</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.map((b) => (
+                  <tr key={b.file}>
+                    <td>{b.file}</td>
+                    <td>{(b.size / 1024).toFixed(1)}</td>
+                    <td>{new Date(b.mtime).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <form onSubmit={doRestore} className="grid-3" style={{ alignItems: 'end' }}>
+          <div className="field">
+            <label>Backup file to restore</label>
+            <select name="file" required>
+              {backups.map((b) => (
+                <option key={b.file} value={b.file}>{b.file}</option>
+              ))}
+              {backups.length === 0 && <option value="">No backups yet</option>}
+            </select>
+          </div>
+          <div className="field">
+            <label>Type your password to confirm</label>
+            <input name="password" type="password" autoComplete="off" required />
+          </div>
+          <button className="btn btn-danger" type="submit" disabled={busy}>
+            Restore Database
+          </button>
+        </form>
+      </div>
+
+      <div className="card" style={{ border: '1px solid var(--red)', marginTop: '16px' }}>
+        <div className="card-title" style={{ color: 'var(--red)' }}>Danger Zone</div>
+        <p style={{ marginBottom: '10px', fontSize: '13px' }}>
+          Clear all data permanently — including the demo invoices, products, customers, stock,
+          payments, transactions, logs and API keys. Your login, company profile, chart of accounts
+          and HSN master codes are <strong>kept</strong>. Deletes cannot be undone — back up first if unsure.
+        </p>
+        <form onSubmit={clearData} className="grid-3" style={{ alignItems: 'end' }}>
+          <div className="field">
+            <label>Type your password to confirm</label>
+            <input name="password" type="password" autoComplete="off" required />
+          </div>
+          <button className="btn btn-danger" type="submit">Clear All Data</button>
+        </form>
+      </div>
     </>
   );
 }

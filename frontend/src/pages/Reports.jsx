@@ -12,12 +12,15 @@ const downloadReport = (path) => {
   fetch(`/api${path}`, { headers: { Authorization: `Bearer ${token}` } })
     .then((r) => {
       if (!r.ok) throw new Error('Download failed');
-      return r.blob();
+      const cd = r.headers.get('Content-Disposition');
+      const m = cd && cd.match(/filename="?([^"]+)"?/);
+      const name = m ? m[1] : path.split('?')[0].split('/').filter(Boolean).pop() + '-' + today() + (path.includes('xml') ? '.xml' : '.csv');
+      return r.blob().then((b) => ({ b, name }));
     })
-    .then((blob) => {
+    .then(({ b, name }) => {
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = path.split('?')[0].split('/').filter(Boolean).pop() + '-' + today() + (path.includes('xml') ? '.xml' : '.csv');
+      link.href = URL.createObjectURL(b);
+      link.download = name;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -76,6 +79,12 @@ export default function Reports() {
   const [tb, setTb] = useState(null);
   const [aging, setAging] = useState(null);
   const [agingType, setAgingType] = useState('receivable');
+  const [gstr9, setGstr9] = useState(null);
+  const [gstr9c, setGstr9c] = useState(null);
+  const [itcReg, setItcReg] = useState(null);
+  const [hsn, setHsn] = useState(null);
+  const [tds, setTds] = useState(null);
+  const [tcs, setTcs] = useState(null);
   const [error, setError] = useState('');
 
   const loadAging = () => {
@@ -101,6 +110,12 @@ export default function Reports() {
       .get(`/reports/trial-balance?from=${from}&to=${to}`)
       .then(setTb)
       .catch(() => {});
+    api.get(`/reports/gstr9?from=${from}&to=${to}`).then(setGstr9).catch(() => {});
+    api.get(`/reports/gstr9c?from=${from}&to=${to}`).then(setGstr9c).catch(() => {});
+    api.get(`/reports/itc-register?from=${from}&to=${to}`).then(setItcReg).catch(() => {});
+    api.get(`/reports/hsn-summary?from=${from}&to=${to}`).then(setHsn).catch(() => {});
+    api.get(`/reports/tds-26q?from=${from}&to=${to}`).then(setTds).catch(() => {});
+    api.get(`/reports/tcs-27eq?from=${from}&to=${to}`).then(setTcs).catch(() => {});
     loadAging();
   };
 
@@ -426,6 +441,278 @@ export default function Reports() {
             </tfoot>
           </table>
         )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <span>GSTR-9 · Annual Return (FY {from} → {to})</span>
+          <div className="flex">
+            <button
+              className="btn btn-sm"
+              disabled={!gstr9}
+              onClick={() =>
+                csvExport(`gstr9-${from}-to-${to}.csv`, ['Rate%', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess'],
+                  gstr9?.outward.map((r) => [r.gst_rate, r.taxable_value, r.cgst, r.sgst, r.igst, r.cess]))
+              }
+            >
+              CSV
+            </button>
+          </div>
+        </div>
+        {!gstr9 ? (
+          <div className="empty">Loading…</div>
+        ) : (
+          <div className="grid-2">
+            <div>
+              <table className="mt">
+                <thead><tr><th>Rate</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th><th className="right">Cess</th></tr></thead>
+                <tbody>
+                  {gstr9.outward.map((r, i) => (
+                    <tr key={i}><td>{r.gst_rate}%</td><td className="right nowrap">{inr(r.taxable_value)}</td><td className="right nowrap">{inr(r.cgst)}</td><td className="right nowrap">{inr(r.sgst)}</td><td className="right nowrap">{inr(r.igst)}</td><td className="right nowrap">{inr(r.cess)}</td></tr>
+                  ))}
+                  {gstr9.outward.length === 0 && <tr><td colSpan="6" className="empty">No outward supply.</td></tr>}
+                </tbody>
+                <tfoot>
+                  <tr><td><strong>Total</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.taxable)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.cgst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.sgst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.igst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.cess)}</strong></td></tr>
+                </tfoot>
+              </table>
+              <p className="muted" style={{ margin: '10px 0' }}>Turnover (books): <strong>{inr(gstr9.turnover)}</strong> · ITC booked: <strong>{inr(gstr9.itc_total)}</strong></p>
+            </div>
+            <div>
+              <table className="mt">
+                <thead><tr><th>RCM supplies (no vendor GSTIN)</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th></tr></thead>
+                <tbody>
+                  {gstr9.rcm.map((r, i) => (
+                    <tr key={i}><td>{r.gst_rate}%</td><td className="right nowrap">{inr(r.taxable_value)}</td><td className="right nowrap">{inr(r.cgst)}</td><td className="right nowrap">{inr(r.sgst)}</td><td className="right nowrap">{inr(r.igst)}</td></tr>
+                  ))}
+                  {gstr9.rcm.length === 0 && <tr><td colSpan="5" className="empty">No RCM.</td></tr>}
+                </tbody>
+              </table>
+              <div className="summary-row">
+                <SummaryRow label="Net GST payable (out − ITC)" value={gstr9.netGstPayable} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <span>GSTR-9C · Reconciliation (FY {from} → {to})</span>
+          <div className="flex">
+            <button
+              className="btn btn-sm"
+              disabled={!gstr9c}
+              onClick={() =>
+                csvExport(`gstr9c-${from}-to-${to}.csv`, ['Item', 'Value'],
+                  Object.entries(gstr9c || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]))
+              }
+            >
+              CSV
+            </button>
+          </div>
+        </div>
+        {!gstr9c ? (
+          <div className="empty">Loading…</div>
+        ) : (
+          <div className="grid-3">
+            <div className="summary-row">
+              <SummaryRow label="Turnover as per books" value={gstr9c.turnover_as_per_books} />
+              <SummaryRow label="Taxable as per books" value={gstr9c.taxable_as_per_books} />
+              <SummaryRow label="GST as per books" value={gstr9c.gst_as_per_books} />
+            </div>
+            <div className="summary-row">
+              <SummaryRow label="ITC as per books" value={gstr9c.itc_as_per_books} />
+              <SummaryRow label="ITC claimed (Q7)" value={gstr9c.input_credit_claimed} />
+              <SummaryRow label="ITC difference" value={gstr9c.itc_difference} />
+            </div>
+            <div className="summary-row">
+              <SummaryRow label="Tax deposited (26Q/27EQ + GST PMT)" value={gstr9c.tax_deposited} />
+              <SummaryRow label="Tax difference" value={gstr9c.tax_difference} />
+              <SummaryRow label="CA variance" value={gstr9c.clearance?.variance} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <span>ITC Register</span>
+          <div className="flex">
+            <button
+              className="btn btn-sm"
+              disabled={!itcReg}
+              onClick={() =>
+                csvExport(`itc-register-${from}-to-${to}.csv`, ['Bill', 'Date', 'Vendor', 'GSTIN', 'Type', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total GST', 'Grand'],
+                  itcReg?.data.map((r) => [r.bill_number, r.bill_date, r.vendor_name, r.vendor_gstin || '', r.eligible, r.taxable_value, r.cgst, r.sgst, r.igst, r.total_gst, r.grand_total]))
+              }
+            >
+              CSV
+            </button>
+          </div>
+        </div>
+        {!itcReg ? (
+          <div className="empty">Loading…</div>
+        ) : (
+          <>
+            <table>
+              <thead>
+                <tr><th>Bill</th><th>Date</th><th>Vendor</th><th>GSTIN</th><th>Type</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th><th className="right">Total GST</th></tr>
+              </thead>
+              <tbody>
+                {itcReg.data.map((r, i) => (
+                  <tr key={i}>
+                    <td className="nowrap">{r.bill_number}</td>
+                    <td className="nowrap">{r.bill_date}</td>
+                    <td>{r.vendor_name}</td>
+                    <td className="nowrap">{r.vendor_gstin || '—'}</td>
+                    <td>{r.eligible === 'ELIGIBLE' ? <span className="badge badge-green">ELIGIBLE</span> : <span className="badge badge-red">INELIGIBLE (RCM)</span>}</td>
+                    <td className="right nowrap">{inr(r.taxable_value)}</td>
+                    <td className="right nowrap">{inr(r.cgst)}</td>
+                    <td className="right nowrap">{inr(r.sgst)}</td>
+                    <td className="right nowrap">{inr(r.igst)}</td>
+                    <td className="right nowrap">{inr(r.total_gst)}</td>
+                  </tr>
+                ))}
+                {itcReg.data.length === 0 && <tr><td colSpan="10" className="empty">No purchases in period.</td></tr>}
+              </tbody>
+            </table>
+            <div className="summary-row" style={{ display: 'flex', gap: 24, marginTop: 10 }}>
+              <span>Eligible ITC: <strong>{inr(itcReg.totals?.eligible)}</strong></span>
+              <span>Ineligible (RCM): <strong>{inr(itcReg.totals?.ineligible)}</strong></span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <span>HSN Summary (GSTR-1 Tab 12)</span>
+          <div className="flex">
+            <button
+              className="btn btn-sm"
+              disabled={!hsn}
+              onClick={() =>
+                csvExport(`hsn-summary-${from}-to-${to}.csv`, ['HSN', 'Rate%', 'Unit', 'Qty', 'Txns', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess'],
+                  hsn?.data.map((r) => [r.hsn_code, r.gst_rate, r.unit, r.quantity, r.txns, r.taxable_value, r.cgst, r.sgst, r.igst, r.cess]))
+              }
+            >
+              CSV
+            </button>
+          </div>
+        </div>
+        {!hsn ? (
+          <div className="empty">Loading…</div>
+        ) : (
+          <table>
+            <thead>
+              <tr><th>HSN</th><th>Rate %</th><th>Unit</th><th className="right">Qty</th><th className="right">Txns</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th><th className="right">Cess</th></tr>
+            </thead>
+            <tbody>
+              {hsn.data.map((r, i) => (
+                <tr key={i}>
+                  <td className="nowrap">{r.hsn_code || '—'}</td>
+                  <td>{r.gst_rate}%</td>
+                  <td>{r.unit}</td>
+                  <td className="right">{r.quantity}</td>
+                  <td className="right">{r.txns}</td>
+                  <td className="right nowrap">{inr(r.taxable_value)}</td>
+                  <td className="right nowrap">{inr(r.cgst)}</td>
+                  <td className="right nowrap">{inr(r.sgst)}</td>
+                  <td className="right nowrap">{inr(r.igst)}</td>
+                  <td className="right nowrap">{inr(r.cess)}</td>
+                </tr>
+              ))}
+              {hsn.data.length === 0 && <tr><td colSpan="10" className="empty">No sales in period.</td></tr>}
+            </tbody>
+            <tfoot>
+              <tr><td colSpan="3"><strong>Totals</strong></td><td className="right"><strong>{hsn.totals?.quantity}</strong></td><td /><td className="right nowrap"><strong>{inr(hsn.totals?.taxable_value)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.cgst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.sgst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.igst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.cess)}</strong></td></tr>
+            </tfoot>
+          </table>
+        )}
+      </div>
+
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">
+            <span>Form 26Q · TDS (Sec 194Q)</span>
+            <div className="flex">
+              <button
+                className="btn btn-sm"
+                disabled={!tds}
+                onClick={() =>
+                  csvExport(`tds-26q-${from}-to-${to}.csv`, ['Bill', 'Date', 'Vendor', 'PAN', 'Grand Total', 'TDS'],
+                    tds?.data.map((r) => [r.bill_number, r.bill_date, r.vendor_name, r.vendor_pan || '', r.grand_total, r.tds_amount]))
+                }
+              >
+                CSV
+              </button>
+            </div>
+          </div>
+          {!tds ? (
+            <div className="empty">Loading…</div>
+          ) : tds.data.length === 0 ? (
+            <div className="empty">No TDS in period (0.1% above threshold).</div>
+          ) : (
+            <table>
+              <thead><tr><th>Bill</th><th>Date</th><th>Vendor</th><th>PAN</th><th className="right">Total</th><th className="right">TDS</th></tr></thead>
+              <tbody>
+                {tds.data.map((r, i) => (
+                  <tr key={i}><td className="nowrap">{r.bill_number}</td><td className="nowrap">{r.bill_date}</td><td>{r.vendor_name}</td><td className="nowrap">{r.vendor_pan || '—'}</td><td className="right nowrap">{inr(r.grand_total)}</td><td className="right nowrap">{inr(r.tds_amount)}</td></tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td colSpan="5" className="right"><strong>Total TDS</strong></td><td className="right nowrap"><strong>{inr(tds.total)}</strong></td></tr></tfoot>
+            </table>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-title">
+            <span>Form 27EQ · TCS (Sec 206C(1H))</span>
+            <div className="flex">
+              <button
+                className="btn btn-sm"
+                disabled={!tcs}
+                onClick={() =>
+                  csvExport(`tcs-27eq-${from}-to-${to}.csv`, ['Invoice', 'Date', 'Customer', 'PAN', 'Grand Total', 'TCS'],
+                    tcs?.data.map((r) => [r.invoice_number, r.invoice_date, r.customer_name, r.customer_pan || '', r.grand_total, r.tcs_amount]))
+                }
+              >
+                CSV
+              </button>
+            </div>
+          </div>
+          {!tcs ? (
+            <div className="empty">Loading…</div>
+          ) : tcs.data.length === 0 ? (
+            <div className="empty">No TCS in period (0.1% above threshold).</div>
+          ) : (
+            <table>
+              <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>PAN</th><th className="right">Total</th><th className="right">TCS</th></tr></thead>
+              <tbody>
+                {tcs.data.map((r, i) => (
+                  <tr key={i}><td className="nowrap">{r.invoice_number}</td><td className="nowrap">{r.invoice_date}</td><td>{r.customer_name}</td><td className="nowrap">{r.customer_pan || '—'}</td><td className="right nowrap">{inr(r.grand_total)}</td><td className="right nowrap">{inr(r.tcs_amount)}</td></tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td colSpan="5" className="right"><strong>Total TCS</strong></td><td className="right nowrap"><strong>{inr(tcs.total)}</strong></td></tr></tfoot>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <span>CA Export Kit</span>
+          <span className="muted" style={{ fontSize: 12 }}>Send this ZIP to your CA for the period — opens directly in Excel &amp; Tally</span>
+        </div>
+        <p className="muted">
+          Contains: cover letter with period summary · sales &amp; purchase registers · item books · trial balance ·
+          GSTR-1 annexure &amp; GSTR-3B workings · receivables/payables statements · Tally XML import file.
+        </p>
+        <div className="flex">
+          <button className="btn btn-primary" onClick={() => downloadReport(`/reports/ca-export?from=${from}&to=${to}`)}>Download CA Package (ZIP)</button>
+          <span className="muted">{from} to {to}</span>
+        </div>
       </div>
 
       <div className="card">

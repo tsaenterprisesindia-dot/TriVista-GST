@@ -11,12 +11,14 @@ import Products from './pages/Products';
 import Inventory from './pages/Inventory';
 import Customers from './pages/Customers';
 import Vendors from './pages/Vendors';
+import Recurring from './pages/Recurring';
 import Reports from './pages/Reports';
 import Accounting from './pages/Accounting';
 import Integration from './pages/Integration';
 import Reconciliation from './pages/Reconciliation';
 import AIAssistant from './pages/AIAssistant';
 import ApiKeys from './pages/ApiKeys';
+import Audit from './pages/Audit';
 import CompanySettings from './pages/CompanySettings';
 import Users from './pages/Users';
 
@@ -51,12 +53,14 @@ function App() {
         <Route path="inventory" element={<Inventory />} />
         <Route path="customers" element={<Customers />} />
         <Route path="vendors" element={<Vendors />} />
+        <Route path="recurring" element={<Recurring />} />
         <Route path="reports" element={<Reports />} />
         <Route path="accounting" element={<Accounting />} />
         <Route path="integration" element={<Integration />} />
         <Route path="reconciliation" element={<Reconciliation />} />
         <Route path="assistant" element={<AIAssistant />} />
         <Route path="api-keys" element={<ApiKeys />} />
+        <Route path="audit" element={<Audit />} />
         <Route path="settings" element={<CompanySettings />} />
         <Route path="users" element={<Users />} />
       </Route>
