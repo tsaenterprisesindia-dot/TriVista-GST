@@ -32,6 +32,42 @@ export default function InvoiceView() {
   const company = inv.company || {};
   const isInterstate = Number(inv.is_interstate) === 1;
 
+  const amountInWords = (n) => {
+    if (isNaN(n)) return '';
+    if (n === 0) return 'Zero';
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const two = (v) => {
+      if (v < 20) return ones[v];
+      return tens[Math.floor(v / 10)] + (v % 10 ? ' ' + ones[v % 10] : '');
+    };
+    const three = (v) => {
+      const h = Math.floor(v / 100);
+      const rest = v % 100;
+      return (h ? (two(h) + ' Hundred' + (rest ? ' ' : '')) : '') + (rest ? two(rest) : '');
+    };
+    const convert = (amt) => {
+      const parts = [];
+      const crore = Math.floor(amt / 10000000);
+      const lakh = Math.floor((amt % 10000000) / 100000);
+      const thousand = Math.floor((amt % 100000) / 1000);
+      const remainder = Math.round(amt % 1000);
+      if (crore) parts.push(convert(crore) + ' Crore');
+      if (lakh) parts.push(two(lakh) + ' Lakh');
+      if (thousand) parts.push(two(thousand) + ' Thousand');
+      if (remainder) parts.push(three(remainder));
+      return parts.join(' ');
+    };
+    const abs = Math.abs(Math.round(Math.abs(n) * 100)) / 100;
+    const rupees = Math.floor(abs);
+    const paise = Math.round((abs - rupees) * 100);
+    let w = convert(rupees) + ' Rupees';
+    if (paise > 0) {
+      w += ' and ' + convert(paise) + ' Paise';
+    }
+    return w + ' Only';
+  };
+
   const recordPayment = async (e) => {
     e.preventDefault();
     setMsg('');
@@ -235,6 +271,10 @@ export default function InvoiceView() {
             <div>Grand Total</div>
             <div className="right nowrap">{inr(inv.grand_total)}</div>
           </div>
+          <div className="row mt" style={{ fontSize: 12, fontStyle: 'italic' }}>
+            <div>Amount in words:</div>
+            <div className="right">{(inv.invoice_type === 'CREDIT_NOTE' || inv.invoice_type === 'DEBIT_NOTE' ? 'Minus ' : '') + amountInWords(inv.grand_total)}</div>
+          </div>
           <div className="row mt">
             <div className="muted">Paid</div>
             <div className="right nowrap">{inr(inv.paid_amount)}</div>
@@ -256,6 +296,16 @@ export default function InvoiceView() {
             Bank: {company.bank_name} · A/c: {company.bank_account_no} · IFSC: {company.bank_ifsc}
           </div>
         )}
+        <div className="flex" style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 10 }}>
+          <span className="muted" style={{ fontSize: 11 }}>
+            This is a computer-generated invoice{inv.irn ? ' (IRN registered, e-invoice compliant)' : ''} and is valid without a signature.
+          </span>
+          <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <div style={{ fontSize: 11 }}>For {company.company_name || 'Company'}</div>
+            <div style={{ height: 42 }} />
+            <div style={{ borderTop: '1px solid #111', width: 200, marginLeft: 'auto', fontSize: 11 }}>Authorised Signatory</div>
+          </span>
+        </div>
       </div>
     </>
   );

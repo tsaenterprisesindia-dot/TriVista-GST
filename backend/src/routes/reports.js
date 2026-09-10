@@ -3,6 +3,7 @@ const c = require('../controllers/reportController');
 const { authenticate } = require('../middleware/auth');
 
 router.get('/dashboard', authenticate, c.dashboard);
+router.get('/month-review', authenticate, c.monthReview);
 router.get('/sales', authenticate, c.salesReport);
 router.get('/gstr1', authenticate, c.gstr1);
 router.get('/gstr1-json', authenticate, c.gstr1Json);

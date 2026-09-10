@@ -16,6 +16,7 @@ const allNavItems = [
   { to: '/recurring', label: 'Recurring', hideForViewer: true },
   { to: '/accounting', label: 'Accounting', hideForViewer: true },
   { to: '/reports', label: 'GST Reports' },
+  { to: '/review', label: 'Month Review' },
   { to: '/reconciliation', label: 'Reconciliation' },
   { to: '/integration', label: 'e-Invoice / e-Way' },
   { to: '/assistant', label: 'AI Assistant', hideForViewer: true },

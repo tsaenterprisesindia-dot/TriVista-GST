@@ -206,6 +206,14 @@ tr:hover td { background: #fafbff; }
   .sidebar, .topbar, .no-print { display: none !important; }
   .layout { height: auto; overflow: visible; }
   .main { height: auto; overflow: visible; padding: 0; }
-  .content { padding: 0; }
-  .card { border: none; box-shadow: none; overflow: visible; }
+  .content { padding: 0; max-width: none; }
+  .card { border: 1px solid #bbb; box-shadow: none; overflow: visible; margin: 0; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  th { background: #f4f6fa !important; color: #111 !important; }
+  #print-area h2 { color: #111c34 !important; }
+  a { color: inherit; text-decoration: none; }
 }

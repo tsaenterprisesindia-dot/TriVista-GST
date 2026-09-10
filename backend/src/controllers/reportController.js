@@ -195,6 +195,106 @@ async function salesReport(req, res, next) {
 }
 
 /**
+ * Month-end review snapshot: output vs input GST, sales/purchase totals,
+ * receivables/payables, and compliance red flags for one month (YYYY-MM).
+ */
+async function monthReview(req, res, next) {
+  try {
+    const pool = getPool();
+    const month = String(req.query.month || '').trim() || new Date().toISOString().slice(0, 7);
+    const from = `${month}-01`;
+    const to = `${month}-31`;
+
+    const [sales] = await pool.query(
+      `SELECT COUNT(*) AS count,
+              IFNULL(SUM(subtotal),0) AS taxable,
+              IFNULL(SUM(cgst_total),0) AS cgst,
+              IFNULL(SUM(sgst_total),0) AS sgst,
+              IFNULL(SUM(igst_total),0) AS igst,
+              IFNULL(SUM(cess_total),0) AS cess,
+              IFNULL(SUM(tax_total),0) AS tax,
+              IFNULL(SUM(grand_total),0) AS grand_total
+       FROM invoices WHERE invoice_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED')`,
+      [from, to]
+    );
+    const [purchases] = await pool.query(
+      `SELECT COUNT(*) AS count,
+              IFNULL(SUM(subtotal),0) AS taxable,
+              IFNULL(SUM(cgst_total),0) AS cgst,
+              IFNULL(SUM(sgst_total),0) AS sgst,
+              IFNULL(SUM(igst_total),0) AS igst,
+              IFNULL(SUM(cess_total),0) AS cess,
+              IFNULL(SUM(tax_total),0) AS tax,
+              IFNULL(SUM(grand_total),0) AS grand_total,
+              SUM(is_rcm=1) AS rcm_bills
+       FROM purchase_bills WHERE bill_date BETWEEN ? AND ?`,
+      [from, to]
+    );
+    const [creditNotes] = await pool.query(
+      `SELECT COUNT(*) AS count, IFNULL(SUM(grand_total),0) AS total
+       FROM invoices
+       WHERE invoice_date BETWEEN ? AND ? AND invoice_type IN ('CREDIT_NOTE','DEBIT_NOTE') AND status NOT IN ('CANCELLED')`,
+      [from, to]
+    );
+    const [outputTax] = await pool.query(
+      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
+       FROM invoices WHERE invoice_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED')`,
+      [from, to]
+    );
+    const [inputTax] = await pool.query(
+      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
+       FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND is_rcm=0`,
+      [from, to]
+    );
+    const [rcmTax] = await pool.query(
+      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
+       FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND is_rcm=1`,
+      [from, to]
+    );
+    const [receivables] = await pool.query(
+      `SELECT IFNULL(SUM(balance_due),0) AS total, COUNT(*) AS count
+       FROM invoices WHERE status IN ('PENDING','PARTIAL')`
+    );
+    const [payables] = await pool.query(
+      `SELECT IFNULL(SUM(balance_due),0) AS total, COUNT(*) AS count
+       FROM purchase_bills WHERE balance_due > 0`
+    );
+    const [pendingIrn] = await pool.query(
+      `SELECT COUNT(*) AS count FROM invoices
+       WHERE invoice_date BETWEEN ? AND ?
+         AND status NOT IN ('CANCELLED','DRAFT')
+         AND invoice_type NOT IN ('CREDIT_NOTE','DEBIT_NOTE','NIL')
+         AND (irn IS NULL OR irn='')`,
+      [from, to]
+    );
+    const [dueInvoices] = await pool.query(
+      `SELECT invoice_number, invoice_date, customer_name, grand_total, balance_due
+       FROM invoices WHERE status IN ('PENDING','PARTIAL') AND invoice_date < ?
+       ORDER BY invoice_date LIMIT 8`, [month === new Date().toISOString().slice(0,7) ? from : new Date().toISOString().slice(0,10)]
+    );
+
+    res.json({
+      month,
+      sales: sales[0],
+      purchases: purchases[0],
+      revenue: (Number(sales[0].grand_total) || 0) - (Number(creditNotes[0].total) || 0),
+      credit_notes: creditNotes[0],
+      net_gst_payable: Math.max(0, Math.round(((Number(outputTax[0].total) || 0) - (Number(inputTax[0].total) || 0)) * 100) / 100),
+      output_tax: Number(outputTax[0].total) || 0,
+      input_tax: Number(inputTax[0].total) || 0,
+      rcm_tax: Number(rcmTax[0].total) || 0,
+      margin_estimate: Math.round(((Number(sales[0].taxable) || 0) - (Number(purchases[0].taxable) || 0)) * 100) / 100,
+      receivables: receivables[0],
+      payables: payables[0],
+      pending_irn: pendingIrn[0].count,
+      due_invoices: dueInvoices,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
  * GSTR-1 style outward supplies summary per HSN/rate for a period.
  */
 async function gstr1(req, res, next) {
@@ -1055,4 +1155,5 @@ module.exports = {
   hsnSummary,
   tdsReport,
   tcsReport,
+  monthReview,
 };

@@ -13,6 +13,7 @@ import Customers from './pages/Customers';
 import Vendors from './pages/Vendors';
 import Recurring from './pages/Recurring';
 import Reports from './pages/Reports';
+import ReviewDashboard from './pages/ReviewDashboard';
 import Accounting from './pages/Accounting';
 import Integration from './pages/Integration';
 import Reconciliation from './pages/Reconciliation';
@@ -55,6 +56,7 @@ function App() {
         <Route path="vendors" element={<Vendors />} />
         <Route path="recurring" element={<Recurring />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="review" element={<ReviewDashboard />} />
         <Route path="accounting" element={<Accounting />} />
         <Route path="integration" element={<Integration />} />
         <Route path="reconciliation" element={<Reconciliation />} />
