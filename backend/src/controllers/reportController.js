@@ -235,6 +235,187 @@ async function gstr1(req, res, next) {
 }
 
 /**
+ * GSTR-1 official JSON (GSTN format v1.7) ready for portal upload.
+ * Builds B2B, B2CL, B2CS, CDNR, EXP, NIL and HSN summary sections.
+ */
+async function gstr1Json(req, res, next) {
+  try {
+    const pool = getPool();
+    const from = req.query.from || '2026-04-01';
+    const to = req.query.to || new Date().toISOString().slice(0, 10);
+    const [rows] = await pool.query(
+      `SELECT i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type,
+              i.customer_gstin, i.place_of_supply,
+              ii.hsn_code, ii.gst_rate,
+              SUM(ii.quantity) AS quantity,
+              SUM(ii.taxable_value) AS taxable_value,
+              SUM(ii.cgst_amount) AS cgst,
+              SUM(ii.sgst_amount) AS sgst,
+              SUM(ii.igst_amount) AS igst,
+              SUM(ii.cess_amount) AS cess
+       FROM invoice_items ii
+       JOIN invoices i ON i.id=ii.invoice_id
+       WHERE i.invoice_date BETWEEN ? AND ? AND i.status NOT IN ('CANCELLED')
+       GROUP BY i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type,
+                i.customer_gstin, i.place_of_supply, ii.hsn_code, ii.gst_rate
+       ORDER BY i.invoice_date`, [from, to]
+    );
+    const [company] = await pool.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
+    const gstin = company[0]?.gstin || '';
+    const fp = from.slice(2, 7); // MMYYYY from YYYY-MM-DD
+
+    const itmDet = (r) => ({
+      txval: Math.round(Number(r.taxable_value) * 100) / 100,
+      rt: Number(r.gst_rate),
+      iamt: Math.abs(Math.round(Number(r.igst) * 100) / 100),
+      camt: Math.abs(Math.round(Number(r.cgst) * 100) / 100),
+      samt: Math.abs(Math.round(Number(r.sgst) * 100) / 100),
+      csamt: Math.abs(Math.round(Number(r.cess) * 100) / 100),
+    });
+    const itms = (ins) =>
+      ins.map((r, idx) => ({
+        num: idx + 1,
+        itm_det: itmDet(r),
+      }));
+
+    // Group rows per invoice so each GSTN "inv" is a single document.
+    const invMap = new Map();
+    for (const r of rows) {
+      if (!invMap.has(r.invoice_number)) {
+        invMap.set(r.invoice_number, {
+          invoice_number: r.invoice_number,
+          invoice_date: r.invoice_date,
+          is_interstate: Number(r.is_interstate),
+          invoice_type: (r.invoice_type || (r.customer_gstin ? 'B2B' : 'B2C')).toUpperCase(),
+          customer_gstin: r.customer_gstin || '',
+          pos: String(r.place_of_supply || '').slice(0, 2),
+          items: [],
+        });
+      }
+      invMap.get(r.invoice_number).items.push(r);
+    }
+
+    const b2bMap = new Map(); // key ctin|pos
+    const b2clMap = new Map(); // key pos
+    const b2cs = new Map(); // key rate
+    const cdnrMap = new Map(); // key ctin
+    const expList = [];
+    const nilRows = [];
+    const hsnMap = new Map();
+
+    const gstnInv = (inv) => ({
+      inum: inv.invoice_number,
+      idt: inv.invoice_date,
+      val: Math.round(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0) * 100) / 100,
+      pos: inv.pos || undefined,
+      itms: itms(inv.items),
+    });
+
+    for (const inv of invMap.values()) {
+      const pos = inv.pos;
+      for (const r of inv.items) {
+        hsnMap.set(`${r.hsn_code}|${r.gst_rate}`, {
+          hsn: r.hsn_code, rt: Number(r.gst_rate), qty: Number(r.quantity) || 0,
+          txval: Number(r.taxable_value) || 0,
+          iamt: Number(r.igst) || 0, camt: Number(r.cgst) || 0, samt: Number(r.sgst) || 0, csamt: Number(r.cess) || 0,
+        });
+      }
+
+      if (inv.invoice_type === 'CREDIT_NOTE' || inv.invoice_type === 'DEBIT_NOTE') {
+        const ntty = inv.invoice_type === 'CREDIT_NOTE' ? 'C' : 'D';
+        const ctin = inv.customer_gstin;
+        if (!cdnrMap.has(ctin)) cdnrMap.set(ctin, []);
+        cdnrMap.get(ctin).push({
+          nt_num: inv.invoice_number,
+          nt_dt: inv.invoice_date,
+          ntty,
+          pos: pos || undefined,
+          typ: ctin ? 'B2B' : 'B2C',
+          val: Math.abs(Math.round(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0) * 100) / 100),
+          itms: itms(inv.items),
+        });
+        continue;
+      }
+      if (inv.invoice_type === 'EXPORT') {
+        expList.push({ exp_typ: 'WOPAY', inv: [gstnInv(inv)] });
+        continue;
+      }
+      if (inv.invoice_type === 'NIL') {
+        nilRows.push({
+          sply_ty: inv.is_interstate ? 'INTER' : 'INTR',
+          nil_amt: Math.round(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0) * 100) / 100,
+          expt_amt: 0, ngsup_amt: 0, sply_ty: inv.is_interstate ? 'INTER' : 'INTR',
+        });
+        continue;
+      }
+      if (inv.customer_gstin) {
+        const key = `${inv.customer_gstin}|${pos}`;
+        if (!b2bMap.has(key)) b2bMap.set(key, { ctin: inv.customer_gstin, pos, cfs: 0, inv: [] });
+        b2bMap.get(key).inv.push(gstnInv(inv));
+      } else if (inv.is_interstate) {
+        if (!b2clMap.has(pos)) b2clMap.set(pos, { pos, inv: [] });
+        b2clMap.get(pos).inv.push(gstnInv(inv));
+      } else {
+        for (const r of inv.items) {
+          const rt = String(r.gst_rate);
+          if (!b2cs.has(rt)) b2cs.set(rt, { rt: Number(r.gst_rate), ad_amt: 0, txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 });
+          const b = b2cs.get(rt);
+          b.txval += Number(r.taxable_value) || 0;
+          b.iamt += Number(r.igst) || 0;
+          b.camt += Number(r.cgst) || 0;
+          b.samt += Number(r.sgst) || 0;
+          b.csamt += Number(r.cess) || 0;
+        }
+      }
+    }
+
+    const payload = {
+      gstin,
+      fp,
+      version: '1.7',
+      hash: 'dummy',
+    };
+    if (b2bMap.size) payload.B2B = [...b2bMap.values()];
+    if (b2clMap.size) payload.B2CL = [...b2clMap.values()];
+    if (b2cs.size) payload.B2CS = Object.values(b2cs);
+    if (cdnrMap.size)
+      payload.CDNR = [...cdnrMap.entries()].map(([ctin, nts]) => ({ ctin: ctin || undefined, cdnr: { ctin: ctin || undefined, nt: nts } }));
+    if (expList.length) payload.EXP = expList;
+    if (nilRows.length) payload.NIL = Object.values(
+      nilRows.reduce((m, r) => {
+        m[r.sply_ty] = m[r.sply_ty] || { sply_ty: r.sply_ty, nil_amt: 0, expt_amt: 0, ngsup_amt: 0 };
+        m[r.sply_ty].nil_amt += r.nil_amt;
+        return m;
+      }, {})
+    );
+    if (hsnMap.size) {
+      payload.HSN = [...hsnMap.values()]
+        .sort((a, b) => (a.hsn > b.hsn ? 1 : -1))
+        .map((h) => ({
+          num: 1,
+          hsn_sc: h.hsn,
+          irn_cn: h.hsn,
+          irn_ngsup: h.hsn,
+          slc: 1,
+          txval: Math.round(h.txval * 100) / 100,
+          iamt: Math.abs(Math.round(h.iamt * 100) / 100),
+          camt: Math.abs(Math.round(h.camt * 100) / 100),
+          samt: Math.abs(Math.round(h.samt * 100) / 100),
+          csamt: Math.abs(Math.round(h.csamt * 100) / 100),
+          qty: Number(h.qty) || 0,
+          unit: 'NOS',
+        }));
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="gstr1-${fp}.json"`);
+    res.send(JSON.stringify(payload, null, 2));
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
  * GSTR-3B style summary by rate slab.
  */
 async function gstr3b(req, res, next) {
@@ -861,6 +1042,7 @@ module.exports = {
   dashboard,
   salesReport,
   gstr1,
+  gstr1Json,
   gstr3b,
   exportCsv,
   exportXml,

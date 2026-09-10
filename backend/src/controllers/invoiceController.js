@@ -348,10 +348,59 @@ async function cancel(req, res, next) {
   const conn = await pool.getConnection();
   try {
     const invoiceId = Number(req.params.id);
+    const reason = String(req.body?.reason || '').trim() || 'Cancelled';
     await conn.beginTransaction();
     const [inv] = await conn.query('SELECT * FROM invoices WHERE id=? FOR UPDATE', [invoiceId]);
     if (!inv.length) throw Object.assign(new Error('Invoice not found.'), { status: 404 });
-    if (inv[0].status === 'CANCELLED') return res.status(400).json({ error: 'Already cancelled.' });
+    const invoice = inv[0];
+    if (invoice.status === 'CANCELLED') return res.status(400).json({ error: 'Already cancelled.' });
+
+    // If this invoice has a live IRN, cancel it at the IRP first (24-hour window).
+    // Without IRP_CANCEL_ENDPOINT configured, we cancel locally and flag the note.
+    let irpStatus = null;
+    if (invoice.irn) {
+      const cancelEndpoint = (process.env.IRP_CANCEL_ENDPOINT || '').trim();
+      if (cancelEndpoint) {
+        const authHeader = (process.env.IRP_AUTH || '').trim();
+        const cancelPayload = {
+          Irn: invoice.irn,
+          Cnlrsn: reason.length > 190 ? reason.slice(0, 190) : reason,
+          Cnlrem: reason,
+        };
+        try {
+          const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          const timer = controller ? setTimeout(() => controller.abort(), 40000) : null;
+          const resp = await fetch(cancelEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(authHeader ? { Authorization: authHeader } : {}) },
+            body: JSON.stringify(cancelPayload),
+            signal: controller ? controller.signal : undefined,
+          });
+          if (timer) clearTimeout(timer);
+          const text = await resp.text();
+          let data = {};
+          try { data = JSON.parse(text); } catch (e) { /* ignore */ }
+          if (!resp.ok && !data.Irn && String(data.Status) !== '1') {
+            throw new Error(`IRP cancel failed: ${text.slice(0, 300)}`);
+          }
+          irpStatus = 'IRN_CANCELLED';
+          await conn.query(
+            `INSERT INTO einvoice_logs (invoice_id,irn,status,raw_request,raw_response)
+             VALUES (?,?,'IRN_CANCELLED',?,?)`,
+            [invoiceId, invoice.irn, JSON.stringify(cancelPayload), text.slice(0, 1000)]
+          );
+        } catch (err) {
+          await conn.query(
+            `INSERT INTO einvoice_logs (invoice_id,irn,status,raw_request,raw_response)
+             VALUES (?,?,'IRN_CANCEL_FAILED',?,?)`,
+            [invoiceId, invoice.irn, JSON.stringify(cancelPayload), String(err.message).slice(0, 1000)]
+          );
+          throw Object.assign(new Error(`Cannot cancel invoice because its IRN is still live. ${err.message}`), { status: 502, expose: true, retainError: true });
+        }
+      } else {
+        irpStatus = 'LOCAL_ONLY';
+      }
+    }
 
     // Restore stock
     const [items] = await conn.query('SELECT product_id, quantity FROM invoice_items WHERE invoice_id=?', [invoiceId]);
@@ -364,13 +413,26 @@ async function cancel(req, res, next) {
         );
       }
     }
-    await conn.query("UPDATE invoices SET status='CANCELLED', balance_due=0 WHERE id=?", [invoiceId]);
-    await refreshCustomerBalance(conn, inv[0].customer_id);
+    const notes = invoice.notes ? `${invoice.notes}\nCANCELLED: ${reason}` : `CANCELLED: ${reason}`;
+    await conn.query(
+      "UPDATE invoices SET status='CANCELLED', balance_due=0, notes=? WHERE id=?",
+      [notes, invoiceId]
+    );
+    await refreshCustomerBalance(conn, invoice.customer_id);
     await conn.commit();
-    await audit(req, 'CANCEL', 'invoice', invoiceId, { invoice_number: inv[0].invoice_number });
-    res.json({ message: 'Invoice cancelled and stock restored.' });
+    await audit(req, 'CANCEL', 'invoice', invoiceId, {
+      invoice_number: invoice.invoice_number,
+      reason,
+      irp: irpStatus,
+    });
+    res.json({
+      message: 'Invoice cancelled and stock restored.',
+      irn_cancelled: irpStatus === 'IRN_CANCELLED',
+      irp_status: irpStatus,
+    });
   } catch (e) {
     await conn.rollback();
+    if (e instanceof Error && e.expose) return res.status(e.status).json({ error: e.message });
     next(e);
   } finally {
     conn.release();

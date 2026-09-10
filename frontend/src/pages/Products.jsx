@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import ImportCsv from '../components/ImportCsv';
 
 const inr = (n) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(n) || 0);
@@ -144,6 +145,16 @@ export default function Products() {
             />
           </div>
           <button className="btn btn-primary" onClick={openNew}>+ New Product</button>
+        </div>
+
+        <div className="card" style={{ marginTop: '10px' }}>
+          <div className="card-title">Import Products from CSV</div>
+          <ImportCsv kind="products" />
+        </div>
+
+        <div className="card" style={{ marginTop: '10px' }}>
+          <div className="card-title">Import HSN / SAC Master from CSV</div>
+          <ImportCsv kind="hsn" />
         </div>
 
         {showForm && (

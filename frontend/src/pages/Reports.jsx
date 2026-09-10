@@ -212,7 +212,15 @@ export default function Reports() {
       </div>
 
       <div className="card">
-        <div className="card-title">GSTR-1 (Outward Supplies)</div>
+        <div className="card-title">GSTR-1 (Outward Supplies)
+          <button
+            className="btn btn-primary btn-sm" style={{ float: 'right' }}
+            title="Download official GSTN upload JSON for this period"
+            onClick={() => downloadReport(`/reports/gstr1-json?from=${from}&to=${to}`)}
+          >
+            Download GSTR-1 JSON (official upload)
+          </button>
+        </div>
         {!gstr1 ? (
           <div className="empty">Loading…</div>
         ) : gstr1.data?.length === 0 ? (

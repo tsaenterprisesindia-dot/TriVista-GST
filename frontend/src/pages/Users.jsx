@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
-const ROLES = ['ADMIN', 'ACCOUNTANT', 'SALES', 'STORE'];
+const ROLES = ['ADMIN', 'ACCOUNTANT', 'SALES', 'STORE', 'VIEWER'];
 
 const empty = { name: '', email: '', password: '', phone: '', role: 'SALES' };
 

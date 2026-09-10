@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/auth');
 router.get('/dashboard', authenticate, c.dashboard);
 router.get('/sales', authenticate, c.salesReport);
 router.get('/gstr1', authenticate, c.gstr1);
+router.get('/gstr1-json', authenticate, c.gstr1Json);
 router.get('/gstr3b', authenticate, c.gstr3b);
 router.get('/gstr9', authenticate, c.gstr9);
 router.get('/gstr9c', authenticate, c.gstr9c);

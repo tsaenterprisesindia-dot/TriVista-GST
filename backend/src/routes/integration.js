@@ -10,4 +10,7 @@ router.post('/einvoice/:id/submit', authenticate, authorize('ADMIN','SUPER_ADMIN
 router.get('/ewaybill', authenticate, c.ewaybillLogs);
 router.post('/ewaybill/:id/generate', authenticate, c.generateEwaybill);
 
+router.get('/settings', authenticate, authorize('ADMIN','SUPER_ADMIN'), c.getSettings);
+router.put('/settings', authenticate, authorize('ADMIN','SUPER_ADMIN'), c.saveSettings);
+
 module.exports = router;

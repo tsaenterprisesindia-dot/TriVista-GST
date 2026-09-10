@@ -142,7 +142,7 @@ async function createUser(req, res, next) {
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     }
-    const roles = ['ADMIN', 'ACCOUNTANT', 'SALES', 'STORE'];
+    const roles = ['ADMIN', 'ACCOUNTANT', 'SALES', 'STORE', 'VIEWER'];
     if (!roles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role.' });
     }

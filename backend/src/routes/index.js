@@ -18,6 +18,7 @@ const recurringRoutes = require('./recurring');
 const notificationsRoutes = require('./notifications');
 const publicApiRoutes = require('./publicApi');
 const auditRoutes = require('./audit');
+const importRoutes = require('./imports');
 
 router.use('/auth', authRoutes);
 router.use('/products', productRoutes);
@@ -37,5 +38,6 @@ router.use('/recurring', recurringRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/apikeys', publicApiRoutes);
 router.use('/audit', auditRoutes);
+router.use('/import', importRoutes);
 
 module.exports = router;

@@ -6,23 +6,23 @@ import NotificationBell from './NotificationBell';
 
 const allNavItems = [
   { to: '/', label: 'Dashboard', end: true },
-  { to: '/pos', label: 'POS' },
-  { to: '/billing', label: 'New Invoice' },
+  { to: '/pos', label: 'POS', hideForViewer: true },
+  { to: '/billing', label: 'New Invoice', hideForViewer: true },
   { to: '/invoices', label: 'Invoices' },
-  { to: '/products', label: 'Products', hideForServices: true },
-  { to: '/inventory', label: 'Inventory', hideForServices: true },
-  { to: '/customers', label: 'Customers' },
-  { to: '/vendors', label: 'Vendors' },
-  { to: '/recurring', label: 'Recurring' },
-  { to: '/accounting', label: 'Accounting' },
+  { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true },
+  { to: '/inventory', label: 'Inventory', hideForServices: true, hideForViewer: true },
+  { to: '/customers', label: 'Customers', hideForViewer: true },
+  { to: '/vendors', label: 'Vendors', hideForViewer: true },
+  { to: '/recurring', label: 'Recurring', hideForViewer: true },
+  { to: '/accounting', label: 'Accounting', hideForViewer: true },
   { to: '/reports', label: 'GST Reports' },
   { to: '/reconciliation', label: 'Reconciliation' },
   { to: '/integration', label: 'e-Invoice / e-Way' },
-  { to: '/assistant', label: 'AI Assistant' },
-  { to: '/api-keys', label: 'API Keys' },
+  { to: '/assistant', label: 'AI Assistant', hideForViewer: true },
+  { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true },
   { to: '/audit', label: 'Audit Log', hl: true },
-  { to: '/settings', label: 'Settings', hl: true },
-  { to: '/users', label: 'Users', hl: true },
+  { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
+  { to: '/users', label: 'Users', hideForViewer: true, hl: true },
 ];
 
 const labelFor = (t) =>
@@ -49,7 +49,9 @@ export default function Layout() {
     navigate('/login');
   };
 
-  const navItems = allNavItems.filter((it) => !(it.hideForServices && bizType === 'services'));
+  const navItems = allNavItems.filter(
+    (it) => !(it.hideForServices && bizType === 'services') && !(it.hideForViewer && user?.role === 'VIEWER')
+  );
 
   return (
     <div className="layout">

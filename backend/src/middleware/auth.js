@@ -23,6 +23,9 @@ function authenticate(req, res, next) {
       name: payload.name,
       role: payload.role,
     };
+    if (req.user.role === 'VIEWER' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      return res.status(403).json({ error: 'Viewer accounts are read-only and cannot modify data.' });
+    }
     next();
   } catch (e) {
     return res.status(401).json({ error: 'Invalid or expired token. Please log in again.' });

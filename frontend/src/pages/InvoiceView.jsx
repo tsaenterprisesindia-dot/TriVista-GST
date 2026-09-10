@@ -46,10 +46,13 @@ export default function InvoiceView() {
   };
 
   const cancelInvoice = async () => {
-    if (!window.confirm('Cancel this invoice? Stock will be restored.')) return;
+    const reason = window.prompt('Cancellation reason (shown in audit & IRP cancel request):', 'Duplicate / wrong entry');
+    if (reason === null) return;
+    if (!window.confirm(`Cancel invoice ${inv.invoice_number}? Stock will be restored.${inv.irn ? ' Its live IRN will also be cancelled (24h window).' : ''}`)) return;
+    setError('');
     try {
-      await api.post(`/invoices/${inv.id}/cancel`);
-      setMsg('Invoice cancelled.');
+      const r = await api.post(`/invoices/${inv.id}/cancel`, { reason: reason.trim() });
+      setMsg(`Invoice cancelled.${r.irn_cancelled ? ' IRN cancelled at IRP.' : ' (no live IRN to cancel)'}`);
       load();
     } catch (err) {
       setError(err.message);

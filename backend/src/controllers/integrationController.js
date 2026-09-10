@@ -1,5 +1,53 @@
 const { getPool } = require('../db');
 const { audit } = require('../utils/audit');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
+
+const CRED_KEYS = ['IRP_ENDPOINT', 'IRP_AUTH', 'IRP_CANCEL_ENDPOINT', 'EWB_ENDPOINT', 'EWB_AUTH'];
+
+async function getSettings(req, res, next) {
+  try {
+    const settings = {};
+    for (const k of CRED_KEYS) {
+      settings[k] = process.env[k] ? (k.endsWith('_AUTH') ? '********' : process.env[k]) : '';
+    }
+    settings.env_file = path.join(process.cwd(), '.env');
+    res.json(settings);
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function saveSettings(req, res, next) {
+  try {
+    const envPath = path.join(process.cwd(), '.env');
+    let text = '';
+    if (fs.existsSync(envPath)) {
+      text = fs.readFileSync(envPath, 'utf8');
+    } else if (!fs.existsSync(path.dirname(envPath))) {
+      throw Object.assign(new Error(`.env folder not found: ${path.dirname(envPath)}`), { status: 500 });
+    }
+    const parsed = { ...(dotenv.parse(text) || {}) };
+    for (const k of CRED_KEYS) {
+      const v = req.body?.[k];
+      if (typeof v !== 'string') continue;
+      const value = v.trim();
+      if (value && (k.endsWith('_AUTH') && value === '********')) continue; // unchanged masked value
+      parsed[k] = value;
+    }
+    let out = '';
+    for (const [k, v] of Object.entries(parsed)) {
+      out += `${k}=${v}\n`;
+    }
+    fs.writeFileSync(envPath, out, 'utf8');
+    for (const k of CRED_KEYS) process.env[k] = parsed[k] || '';
+    await audit(req, 'UPDATE', 'integration_settings', null, { keys: Object.keys(req.body || {}) });
+    res.json({ message: 'Integration credentials saved. Restart not required.', env_file: envPath });
+  } catch (e) {
+    next(e);
+  }
+}
 
 /**
  * Build e-Invoice payload conforming to GSTN 1.03 schema.
@@ -338,4 +386,4 @@ async function ewaybillLogs(req, res, next) {
   }
 }
 
-module.exports = { buildEinvoicePayload, generateEinvoice, simulateIrn, submitIrn, einvoiceLogs, generateEwaybill, ewaybillLogs };
+module.exports = { buildEinvoicePayload, generateEinvoice, simulateIrn, submitIrn, einvoiceLogs, generateEwaybill, ewaybillLogs, getSettings, saveSettings };

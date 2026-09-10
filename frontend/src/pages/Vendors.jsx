@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import ImportCsv from '../components/ImportCsv';
 
 const inr = (n) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(n) || 0);
@@ -104,6 +105,11 @@ export default function Vendors() {
             style={{ width: 280 }}
           />
           <button className="btn btn-primary" onClick={openNew}>+ New Vendor</button>
+        </div>
+
+        <div className="card" style={{ marginTop: '10px' }}>
+          <div className="card-title">Import Vendors from CSV</div>
+          <ImportCsv kind="vendors" />
         </div>
 
         {showForm && (

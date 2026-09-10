@@ -41,6 +41,14 @@ export default function CompanySettings() {
   const [loading, setLoading] = useState(true);
   const [backups, setBackups] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [creds, setCreds] = useState({
+    IRP_ENDPOINT: '',
+    IRP_AUTH: '',
+    IRP_CANCEL_ENDPOINT: '',
+    EWB_ENDPOINT: '',
+    EWB_AUTH: '',
+  });
+  const [credsMsg, setCredsMsg] = useState('');
 
   useEffect(() => {
     api
@@ -55,6 +63,10 @@ export default function CompanySettings() {
     api
       .get('/company/backups')
       .then((list) => setBackups(list || []))
+      .catch(() => {});
+    api
+      .get('/integration/settings')
+      .then((d) => setCreds((c) => ({ ...c, ...d, env_file: undefined })))
       .catch(() => {});
   }, []);
 
@@ -72,6 +84,22 @@ export default function CompanySettings() {
       setSaved('Settings saved.');
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const setCred = (k) => (e) => setCreds((c) => ({ ...c, [k]: e.target.value }));
+
+  const saveCreds = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaved('');
+    setCredsMsg('Saving…');
+    try {
+      const r = await api.put('/integration/settings', creds);
+      setCredsMsg(r.message);
+    } catch (err) {
+      setError(err.message);
+      setCredsMsg('');
     }
   };
 
@@ -314,6 +342,41 @@ export default function CompanySettings() {
         </div>
 
         <button className="btn btn-primary" type="submit">Save Settings</button>
+      </form>
+
+      <form onSubmit={saveCreds} style={{ marginTop: '16px' }}>
+        <div className="card">
+          <div className="card-title">Live IRP / e-Way Credentials</div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+            Enter the GSP credentials supplied for live operation. Saved to <code>backend/.env</code>, effective
+            immediately — no restart needed. When blank, e-Invoice &amp; e-Way run in offline/sandbox mode and cannot
+            submit to the GST portal.
+          </div>
+          <div className="grid-2">
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label>IRP Endpoint (e-Invoice generation URL)</label>
+              <input value={creds.IRP_ENDPOINT} onChange={setCred('IRP_ENDPOINT')} placeholder="https://api.gsp.in/irp/api/v1.03/..." />
+            </div>
+            <div className="field">
+              <label>IRP Auth (token)</label>
+              <input value={creds.IRP_AUTH} onChange={setCred('IRP_AUTH')} type="password" placeholder="Bearer token / app key" />
+            </div>
+            <div className="field">
+              <label>IRP Cancel Endpoint (IRN cancellation, optional)</label>
+              <input value={creds.IRP_CANCEL_ENDPOINT} onChange={setCred('IRP_CANCEL_ENDPOINT')} placeholder="https://api.gsp.in/irp/api/v1.03/..." />
+            </div>
+            <div className="field">
+              <label>e-Way Bill Endpoint (EWB generation URL)</label>
+              <input value={creds.EWB_ENDPOINT} onChange={setCred('EWB_ENDPOINT')} placeholder="https://api.gsp.in/ewb/api/..." />
+            </div>
+            <div className="field">
+              <label>e-Way Bill Auth (token)</label>
+              <input value={creds.EWB_AUTH} onChange={setCred('EWB_AUTH')} type="password" placeholder="Bearer token / app key" />
+            </div>
+          </div>
+          {credsMsg && <div className="success-banner">{credsMsg}</div>}
+          <button className="btn btn-primary" type="submit">Save Credentials</button>
+        </div>
       </form>
 
       <div className="card" style={{ marginTop: '16px' }}>
