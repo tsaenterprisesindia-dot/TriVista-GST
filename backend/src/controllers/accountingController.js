@@ -29,6 +29,8 @@ async function createPurchase(req, res, next) {
 
     const placeOfSupply = b.place_of_supply || vendor.state_code || companyState;
     const isInterstate = String(placeOfSupply) !== String(companyState);
+    // Reverse Charge (RCM): purchases from unregistered dealers. Auto-enabled when vendor has no GSTIN.
+    const isRcm = Number(b.is_rcm) === 1 || !vendor.gstin;
 
     const [mx] = await conn.query('SELECT COALESCE(MAX(id),0) AS mx FROM purchase_bills');
     // For GSTR-2A matching "supplier invoice no" matters, not our series.
@@ -86,12 +88,12 @@ async function createPurchase(req, res, next) {
 
     const [ins] = await conn.query(
       `INSERT INTO purchase_bills
-       (bill_number,bill_date,due_date,vendor_id,vendor_name,vendor_gstin,place_of_supply,is_interstate,status,
+       (bill_number,bill_date,due_date,vendor_id,vendor_name,vendor_gstin,place_of_supply,is_interstate,is_rcm,status,
         subtotal,discount,cgst_total,sgst_total,igst_total,cess_total,tax_total,grand_total,tds_amount,paid_amount,balance_due,notes,created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         billNumber, b.bill_date || new Date().toISOString().slice(0, 10), b.due_date || null,
-        vendor.id, vendor.name, vendor.gstin || null, placeOfSupply, isInterstate ? 1 : 0, 'PENDING',
+        vendor.id, vendor.name, vendor.gstin || null, placeOfSupply, isInterstate ? 1 : 0, isRcm ? 1 : 0, 'PENDING',
         round2(subtotal), round2(discountTotal), round2(cgstTotal), round2(sgstTotal), round2(igstTotal),
         round2(cessTotal), round2(taxTotal), round2(grandTotal), tdsAmount, 0, round2(grandTotal), b.notes || null, req.user.id,
       ]

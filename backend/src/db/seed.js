@@ -1,6 +1,10 @@
 const bcrypt = require('bcryptjs');
 const { getPool } = require('./index');
 
+// --clean => masters only (company, HSN, categories, chart of accounts, admin).
+// Without it, sample products + demo customers/vendors are also seeded (dev/demo mode).
+const CLEAN = process.argv.includes('--clean');
+
 async function seed() {
   const pool = getPool();
   const conn = await pool.getConnection();
@@ -127,9 +131,9 @@ async function seed() {
 
     const catMap = await getCategoryMap(conn);
 
-    // ---- Sample products ----
+    // ---- Sample products (demo mode only) ----
     const [prodCount] = await conn.query('SELECT COUNT(*) AS c FROM products');
-    if (prodCount[0].c === 0) {
+    if (!CLEAN && prodCount[0].c === 0) {
       // sku, barcode, name, category, hsn, rate, unit, sell, purchase, mrp, min_stock, opening_stock
       const products = [
         ['SKU-0001', '8901234560011', 'Basmati Rice 5kg', catMap.Groceries, '1006', 5, 'KG', 450, 400, 480, 10, 120],
@@ -171,9 +175,9 @@ async function seed() {
       console.log('Seeded sample products.');
     }
 
-    // ---- Demo customer ----
+    // ---- Demo customer (demo mode only) ----
     const [custCount] = await conn.query('SELECT COUNT(*) AS c FROM customers');
-    if (custCount[0].c === 0) {
+    if (!CLEAN && custCount[0].c === 0) {
       await conn.query(
         `INSERT INTO customers (customer_code,name,gstin,phone,email,address_line1,city,state,state_code,pincode,opening_balance,credit_limit)
          VALUES ('CUST-0001','Walk-in Customer',NULL,NULL,NULL,'On Counter','Bengaluru','Karnataka','29','560001',0,NULL)`
@@ -189,9 +193,9 @@ async function seed() {
       console.log('Seeded demo customers.');
     }
 
-    // ---- Demo vendor ----
+    // ---- Demo vendor (demo mode only) ----
     const [vendCount] = await conn.query('SELECT COUNT(*) AS c FROM vendors');
-    if (vendCount[0].c === 0) {
+    if (!CLEAN && vendCount[0].c === 0) {
       await conn.query(
         `INSERT INTO vendors (vendor_code,name,gstin,phone,email,address_line1,city,state,state_code,pincode)
          VALUES ('VEND-0001','Karnataka Wholesale Mart','29AAACW1234F1Z4','9900112233','sales@kwmart.in','Wholesale Market Road','Hubballi','Karnataka','29','580001')`

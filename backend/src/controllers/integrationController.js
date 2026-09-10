@@ -177,6 +177,17 @@ async function submitIrn(req, res, next) {
     const invId = Number(req.params.id);
     const pool = getPool();
     const payload = await buildEinvoicePayload(invId);
+    const [invRow] = await pool.query('SELECT invoice_type FROM invoices WHERE id=?', [invId]);
+    const invType = invRow[0]?.invoice_type || 'B2B';
+
+    // Live IRP does not (yet) accept credit/debit notes or nil-rated documents.
+    if (['CREDIT_NOTE', 'DEBIT_NOTE', 'NIL'].includes(invType)) {
+      return res.status(400).json({
+        error: `${invType} is not e-invoice ready. File credit/debit notes manually in the GST portal for now.`,
+        expose: true,
+      });
+    }
+
     const [co] = await pool.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
     const company = co[0] || {};
 

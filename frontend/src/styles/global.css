@@ -193,7 +193,7 @@ tr:hover td { background: #fafbff; }
 .success-banner, .error-banner {
   padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; font-weight: 500;
 }
-.success-banner { background: #e6f7ec; color: var(--green); }
+.success-banner { background: #16a34a; color: #ffffff; }
 .error-banner { background: #fde8e8; color: var(--red); }
 
 .empty { text-align: center; color: var(--text-muted); padding: 30px 0; }

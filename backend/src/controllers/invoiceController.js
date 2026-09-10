@@ -37,13 +37,25 @@ async function createInvoiceCore(conn, user, b) {
     throw Object.assign(new Error('This invoice is backdated. Send allow_backdate:true with a reason in notes to proceed.'), { status: 400, expose: true });
   }
 
-  // Atomically allocate next invoice number (gap-less per financial year)
-  const invoiceNumber = await allocateInvoiceNumber(conn, company, invDate);
-
-  // Fetch customer
+  // Fetch customer (needed for default document type / place of supply)
   const [custRows] = await conn.query('SELECT * FROM customers WHERE id=?', [b.customer_id]);
   if (!custRows.length) throw Object.assign(new Error('Customer not found.'), { status: 404 });
   const customer = custRows[0];
+
+  // Document type: Tax Invoice B2B/B2C (default by customer GSTIN), or
+  // CREDIT_NOTE / DEBIT_NOTE / EXPORT / NIL (exempt)
+  const DOC_TYPES = ['B2B', 'B2C', 'CREDIT_NOTE', 'DEBIT_NOTE', 'EXPORT', 'NIL'];
+  const requestedType = String(b.invoice_type || '').toUpperCase();
+  const invoiceType = DOC_TYPES.includes(requestedType)
+    ? requestedType
+    : customer.gstin ? 'B2B' : 'B2C';
+  const isCreditDoc = invoiceType === 'CREDIT_NOTE' || invoiceType === 'DEBIT_NOTE';
+  const isNilDoc = invoiceType === 'NIL';
+  const isExportDoc = invoiceType === 'EXPORT';
+  const sign = isCreditDoc ? -1 : 1;
+
+  // Atomically allocate next invoice number (gap-less per financial year)
+  const invoiceNumber = await allocateInvoiceNumber(conn, company, invDate);
 
   const placeOfSupply = b.place_of_supply || customer.state_code || companyState;
   const isInterstate = String(placeOfSupply) !== String(companyState);
@@ -55,19 +67,28 @@ async function createInvoiceCore(conn, user, b) {
     const qty = Number(it.quantity) || 1;
     const rate = Number(it.unit_price) || 0;
     const disc = Number(it.discount) || 0;
-    const gstRate = Number(it.gst_rate) || 0;
+    let gstRate = Number(it.gst_rate) || 0;
     const gross = qty * rate;
-    const taxableValue = gross - disc;
-    const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
+    let taxableValue = gross - disc;
+    // Nil/exempt documents carry no tax (portal reports taxable position separately).
+    // Exports carry the value but zero tax.
+    if (isNilDoc) {
+      gstRate = 0;
+      taxableValue = 0;
+    }
+    const tax = isNilDoc || isExportDoc
+      ? { cgst: 0, sgst: 0, igst: 0, cess: 0 }
+      : splitGst(taxableValue, gstRate, placeOfSupply, companyState);
+    const lineTotal = (taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess) * sign;
 
-    subtotal += gross;
-    discountTotal += disc;
-    cgstTotal += tax.cgst;
-    sgstTotal += tax.sgst;
-    igstTotal += tax.igst;
-    cessTotal += tax.cess;
-    taxTotal += tax.cgst + tax.sgst + tax.igst + tax.cess;
-    grandTotal += taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess;
+    subtotal += gross * sign;
+    discountTotal += disc * sign;
+    cgstTotal += tax.cgst * sign;
+    sgstTotal += tax.sgst * sign;
+    igstTotal += tax.igst * sign;
+    cessTotal += tax.cess * sign;
+    taxTotal += (tax.cgst + tax.sgst + tax.igst + tax.cess) * sign;
+    grandTotal += lineTotal;
 
     itemRows.push({
       product_id: it.product_id || null,
@@ -78,15 +99,15 @@ async function createInvoiceCore(conn, user, b) {
       unit: it.unit || 'PCS',
       unit_price: rate,
       discount: disc,
-      taxable_value: round2(taxableValue),
-      cgst_amount: tax.cgst,
-      sgst_amount: tax.sgst,
-      igst_amount: tax.igst,
-      cess_amount: tax.cess,
-      total: round2(taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess),
+      taxable_value: round2(taxableValue * sign),
+      cgst_amount: tax.cgst * sign,
+      sgst_amount: tax.sgst * sign,
+      igst_amount: tax.igst * sign,
+      cess_amount: tax.cess * sign,
+      total: round2(lineTotal),
     });
 
-    // Stock OUT for products
+    // Stock handling: OUT on sale, IN (restock) on credit notes. Services are skipped.
     if (it.product_id) {
       const [p] = await conn.query('SELECT is_service FROM products WHERE id=?', [it.product_id]);
       if (p.length && !p[0].is_service) {
@@ -102,6 +123,12 @@ async function createInvoiceCore(conn, user, b) {
           `INSERT INTO stock_movements (product_id,type,quantity,note,created_by)
            VALUES (?,'OUT',?,?,?)`,
           [it.product_id, qty, `Invoice ${invoiceNumber}`, user.id]
+        );
+      } else if (isCreditDoc) {
+        await conn.query(
+          `INSERT INTO stock_movements (product_id,type,quantity,note,created_by)
+           VALUES (?,'IN',?,?,?)`,
+          [it.product_id, qty, `Credit note ${invoiceNumber} restock`, user.id]
         );
       }
     }
@@ -122,7 +149,6 @@ async function createInvoiceCore(conn, user, b) {
     round2(subtotal - discountTotal), 0, company
   );
 
-  const invoiceType = customer.gstin ? 'B2B' : 'B2C';
   const [ins] = await conn.query(
     `INSERT INTO invoices
      (invoice_number,invoice_date,due_date,customer_id,customer_name,customer_gstin,invoice_type,

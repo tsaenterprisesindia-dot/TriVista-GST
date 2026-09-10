@@ -21,6 +21,7 @@ export default function Billing() {
 
   const [form, setForm] = useState(() => ({
     customer_id: '',
+    invoice_type: '',
     invoice_date: new Date().toISOString().slice(0, 10),
     due_date: '',
     payment_mode: 'CREDIT',
@@ -89,27 +90,35 @@ export default function Billing() {
 
   const removeItem = (idx) => setForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
 
+  const isCreditDoc = form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE';
   const calc = useMemo(() => {
+    const docSign = isCreditDoc ? -1 : 1;
     let subtotal = 0, discount = 0, cgst = 0, sgst = 0, igst = 0, tax = 0, grand = 0;
     const detail = form.items.map((it) => {
       const gross = it.quantity * it.unit_price;
-      const taxable = gross - (it.discount || 0);
+      let taxable = gross - (it.discount || 0);
       let cg = 0, sg = 0, ig = 0;
-      if (isInterstate) ig = r2((taxable * it.gst_rate) / 100);
-      else { cg = r2((taxable * it.gst_rate) / 200); sg = r2((taxable * it.gst_rate) / 200); }
-      subtotal += gross;
-      discount += it.discount || 0;
-      cgst += cg; sgst += sg; igst += ig;
-      tax += cg + sg + ig;
-      grand += taxable + cg + sg + ig;
-      return { ...it, taxable, cg, sg, ig, line: r2(taxable + cg + sg + ig) };
+      const isNil = form.invoice_type === 'NIL';
+      const isExport = form.invoice_type === 'EXPORT';
+      if (isNil) taxable = 0;
+      else if (!isExport) {
+        if (isInterstate) ig = r2((taxable * it.gst_rate) / 100);
+        else { cg = r2((taxable * it.gst_rate) / 200); sg = r2((taxable * it.gst_rate) / 200); }
+      }
+      subtotal += gross * docSign;
+      discount += (it.discount || 0) * docSign;
+      cgst += cg * docSign; sgst += sg * docSign; igst += ig * docSign;
+      tax += (cg + sg + ig) * docSign;
+      grand += (taxable + cg + sg + ig) * docSign;
+      return { ...it, taxable: r2(taxable * docSign), cg: cg * docSign, sg: sg * docSign, ig: ig * docSign, line: r2((taxable + cg + sg + ig) * docSign) };
     });
     return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), igst: r2(igst), tax: r2(tax), grand: r2(grand) };
-  }, [form.items, isInterstate]);
+  }, [form.items, isInterstate, isCreditDoc, form.invoice_type]);
 
   const payload = () => ({
     customer_id: form.customer_id,
     customer_gstin: customer?.gstin || '',
+    invoice_type: form.invoice_type || undefined,
     place_of_supply: supplyState,
     is_interstate: isInterstate,
     invoice_date: form.invoice_date,
@@ -232,6 +241,23 @@ export default function Billing() {
               <label>Invoice Date</label>
               <input type="date" value={form.invoice_date} onChange={(e) => setForm((f) => ({ ...f, invoice_date: e.target.value }))} required />
             </div>
+          </div>
+          <div className="field">
+            <label>Document Type</label>
+            <select value={form.invoice_type} onChange={(e) => setForm((f) => ({ ...f, invoice_type: e.target.value }))}>
+              <option value="">Auto (B2B if customer has GSTIN, else B2C)</option>
+              <option value="B2B">B2B — Tax Invoice (customer has GSTIN)</option>
+              <option value="B2C">B2C — Tax Invoice (no GSTIN)</option>
+              <option value="CREDIT_NOTE">Credit Note (reduces sales)</option>
+              <option value="DEBIT_NOTE">Debit Note (increases sales)</option>
+              <option value="EXPORT">Export (0% GST, retains value)</option>
+              <option value="NIL">Nil-Rated / Exempt (no tax or value)</option>
+            </select>
+            {(form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE') && (
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+                Credit/debit notes are stored with negative amounts so monthly/annual GST reports net them correctly.
+              </div>
+            )}
           </div>
           <div className="row">
             <div className="field">

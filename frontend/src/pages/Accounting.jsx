@@ -18,7 +18,7 @@ export default function Accounting() {
   const [products, setProducts] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [pform, setPform] = useState({ vendor_id: '', bill_date: today(), items: [lineEmpty()] });
+  const [pform, setPform] = useState({ vendor_id: '', bill_date: today(), is_rcm: false, items: [lineEmpty()] });
 
   const [plFrom, setPlFrom] = useState(firstOfMonth());
   const [plTo, setPlTo] = useState(today());
@@ -155,6 +155,13 @@ export default function Accounting() {
                   <div className="field">
                     <label>Bill Date</label>
                     <input type="date" value={pform.bill_date} onChange={(e) => setPform((f) => ({ ...f, bill_date: e.target.value }))} required />
+                  </div>
+                  <div className="field">
+                    <label>Reverse Charge (RCM)</label>
+                    <select value={pform.is_rcm ? 1 : 0} onChange={(e) => setPform((f) => ({ ...f, is_rcm: e.target.value === '1' }))}>
+                      <option value="0">No (regular purchase)</option>
+                      <option value="1">Yes (goods/services from unregistered supplier)</option>
+                    </select>
                   </div>
                 </div>
 

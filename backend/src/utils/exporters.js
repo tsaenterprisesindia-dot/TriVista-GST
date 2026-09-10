@@ -32,6 +32,7 @@ function invoicesCsv(invoices) {
   const headers = [
     'InvoiceNo',
     'InvoiceDate',
+    'DocType',
     'CustomerName',
     'CustomerGSTIN',
     'PlaceOfSupply',
@@ -56,6 +57,7 @@ function invoicesCsv(invoices) {
       rows.push({
         InvoiceNo: inv.invoice_number,
         InvoiceDate: inv.invoice_date,
+        DocType: inv.invoice_type || '',
         CustomerName: inv.customer_name,
         CustomerGSTIN: inv.customer_gstin || '',
         PlaceOfSupply: inv.place_of_supply,

@@ -203,7 +203,7 @@ async function gstr1(req, res, next) {
     const pool = getPool();
     const params = [from, to];
     const [rows] = await pool.query(
-      `SELECT i.invoice_number, i.invoice_date, i.is_interstate,
+      `SELECT i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type,
               ii.hsn_code, ii.gst_rate,
               SUM(ii.quantity) AS quantity,
               SUM(ii.taxable_value) AS taxable_value,
@@ -215,7 +215,7 @@ async function gstr1(req, res, next) {
        FROM invoice_items ii
        JOIN invoices i ON i.id=ii.invoice_id
        WHERE i.invoice_date BETWEEN ? AND ? AND i.status NOT IN ('CANCELLED')
-       GROUP BY i.invoice_number, i.invoice_date, i.is_interstate, ii.hsn_code, ii.gst_rate,
+       GROUP BY i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type, ii.hsn_code, ii.gst_rate,
                 i.customer_name, i.customer_gstin
        ORDER BY i.invoice_date`, params
     );
@@ -449,7 +449,7 @@ async function caExport(req, res, next) {
        FROM invoices WHERE invoice_date BETWEEN ? AND ? AND ${nc} ORDER BY invoice_date, invoice_number`, [from, to]
     );
     const [purchases] = await pool.query(
-      `SELECT bill_number, bill_date, vendor_name, vendor_gstin, place_of_supply, is_interstate,
+      `SELECT bill_number, bill_date, vendor_name, vendor_gstin, place_of_supply, is_interstate, is_rcm,
               subtotal, discount, tax_total, cgst_total, sgst_total, igst_total, cess_total, grand_total,
               paid_amount, balance_due
        FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND ${nc} ORDER BY bill_date, bill_number`, [from, to]
@@ -476,13 +476,13 @@ async function caExport(req, res, next) {
       : [[]];
 
     const [gstr1] = await pool.query(
-      `SELECT i.invoice_number, i.invoice_date, i.is_interstate, ii.hsn_code, ii.gst_rate,
+      `SELECT i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type, ii.hsn_code, ii.gst_rate,
               SUM(ii.quantity) AS quantity, SUM(ii.taxable_value) AS taxable_value,
               SUM(ii.cgst_amount) AS cgst, SUM(ii.sgst_amount) AS sgst, SUM(ii.igst_amount) AS igst,
               SUM(ii.cess_amount) AS cess, i.customer_name, i.customer_gstin
        FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
        WHERE i.invoice_date BETWEEN ? AND ? AND i.status NOT IN ('CANCELLED')
-       GROUP BY i.invoice_number, i.invoice_date, i.is_interstate, ii.hsn_code, ii.gst_rate,
+       GROUP BY i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type, ii.hsn_code, ii.gst_rate,
                 i.customer_name, i.customer_gstin ORDER BY i.invoice_date`, [from, to]
     );
 
@@ -501,8 +501,9 @@ async function caExport(req, res, next) {
 
     // Sales register CSV
     const salesCsv = toCsv(
-      ['InvoiceNo', 'Date', 'Customer', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
+      ['DocType', 'InvoiceNo', 'Date', 'Customer', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
       sales.map((r) => ({
+        DocType: r.invoice_type || '',
         InvoiceNo: r.invoice_number, Date: r.invoice_date, Customer: r.customer_name, GSTIN: r.customer_gstin || '',
         POS: r.place_of_supply || '', Type: r.is_interstate ? 'Inter-state' : 'Intra-state',
         Taxable: r.subtotal, Discount: r.discount, CGST: r.cgst_total, SGST: r.sgst_total,
@@ -513,8 +514,9 @@ async function caExport(req, res, next) {
 
     // Purchase register CSV
     const purchaseCsv = toCsv(
-      ['BillNo', 'Date', 'Vendor', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
+      ['RCM', 'BillNo', 'Date', 'Vendor', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
       purchases.map((r) => ({
+        RCM: r.is_rcm ? 'YES' : '',
         BillNo: r.bill_number, Date: r.bill_date, Vendor: r.vendor_name, GSTIN: r.vendor_gstin || '',
         POS: r.place_of_supply || '', Type: r.is_interstate ? 'Inter-state' : 'Intra-state',
         Taxable: r.subtotal, Discount: r.discount, CGST: r.cgst_total, SGST: r.sgst_total,
@@ -551,9 +553,10 @@ async function caExport(req, res, next) {
 
     // GSTR workings
     const gstr1Csv = toCsv(
-      ['InvoiceNo', 'Date', 'Supply', 'HSN', 'GST%', 'Qty', 'TaxableValue', 'CGST', 'SGST', 'IGST', 'Cess', 'Customer', 'GSTIN'],
+      ['InvoiceNo', 'Date', 'Supply', 'DocType', 'HSN', 'GST%', 'Qty', 'TaxableValue', 'CGST', 'SGST', 'IGST', 'Cess', 'Customer', 'GSTIN'],
       gstr1.map((r) => ({
         InvoiceNo: r.invoice_number, Date: r.invoice_date, Supply: r.is_interstate ? 'IGST' : 'Same state',
+        DocType: r.invoice_type || '',
         HSN: r.hsn_code || '', 'GST%': r.gst_rate, Qty: r.quantity, TaxableValue: r.taxable_value,
         CGST: r.cgst, SGST: r.sgst, IGST: r.igst, Cess: r.cess, Customer: r.customer_name, GSTIN: r.customer_gstin || '',
       }))
@@ -663,7 +666,7 @@ async function gstr9(req, res, next) {
               SUM(pbi.cgst_amount) AS cgst, SUM(pbi.sgst_amount) AS sgst,
               SUM(pbi.igst_amount) AS igst, SUM(pbi.cess_amount) AS cess
        FROM purchase_bill_items pbi JOIN purchase_bills pb ON pb.id=pbi.bill_id
-       WHERE pb.bill_date BETWEEN ? AND ? AND pb.status NOT IN ('CANCELLED') AND pb.vendor_gstin IS NOT NULL
+       WHERE pb.bill_date BETWEEN ? AND ? AND pb.status NOT IN ('CANCELLED') AND pb.is_rcm=0 AND pb.vendor_gstin IS NOT NULL
        GROUP BY pbi.gst_rate ORDER BY pbi.gst_rate`, [from, to]
     );
     const [rcm] = await pool.query(
@@ -672,17 +675,17 @@ async function gstr9(req, res, next) {
               SUM(pbi.cgst_amount) AS cgst, SUM(pbi.sgst_amount) AS sgst,
               SUM(pbi.igst_amount) AS igst
        FROM purchase_bill_items pbi JOIN purchase_bills pb ON pb.id=pbi.bill_id
-       WHERE pb.bill_date BETWEEN ? AND ? AND pb.status NOT IN ('CANCELLED') AND pb.vendor_gstin IS NULL
+       WHERE pb.bill_date BETWEEN ? AND ? AND pb.status NOT IN ('CANCELLED') AND pb.is_rcm=1
        GROUP BY pbi.gst_rate ORDER BY pbi.gst_rate`, [from, to]
     );
     const sumRows = await Promise.all([
       pool.query(`SELECT IFNULL(SUM(grand_total),0) AS turnover FROM invoices WHERE invoice_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED')`, [from, to]),
-      pool.query(`SELECT IFNULL(SUM(tax_total),0) AS itc_total FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND vendor_gstin IS NOT NULL`, [from, to]),
+      pool.query(`SELECT IFNULL(SUM(tax_total),0) AS itc_total FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND is_rcm=0 AND vendor_gstin IS NOT NULL`, [from, to]),
     ]);
     const turnover = Number(sumRows[0][0][0].turnover) || 0;
     const itcTotal = Number(sumRows[1][0][0].itc_total) || 0;
     const [[{ rcmTax }]] = await pool.query(
-      `SELECT IFNULL(SUM(tax_total),0) AS rcmTax FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND vendor_gstin IS NULL`, [from, to]
+      `SELECT IFNULL(SUM(tax_total),0) AS rcmTax FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND is_rcm=1`, [from, to]
     );
     const sumr = (arr, k) => arr.reduce((a, r) => a + (Number(r[k]) || 0), 0);
     res.json({

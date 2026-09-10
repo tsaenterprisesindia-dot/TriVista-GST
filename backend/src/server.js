@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -11,6 +13,7 @@ const routes = require('./routes');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT) || 5000;
 
 // Security headers
@@ -55,6 +58,18 @@ createPool();
 
 // Routes
 app.use('/api', routes);
+
+// Serve the built frontend (single-port deployment: laptop/VPS, one process)
+const distDir = process.env.FRONTEND_DIST || path.join(__dirname, '../../frontend/dist');
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+  // SPA fallback: return index.html for non-API, non-asset GETs
+  app.get(/^\/(?!api\/).*/i, (req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+} else {
+  console.warn(`[server] Frontend dist not found at ${distDir} - API only. Run: cd frontend && npm run build`);
+}
 
 // 404 + error handling
 app.use(notFound);

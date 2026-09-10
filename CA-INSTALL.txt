@@ -1,0 +1,82 @@
+TriVista GST ERP
+Cloud-free CA trial install guide (Windows laptop)
+==================================================
+
+This guide installs the ERP on a Windows laptop so a Chartered Accountant
+can trial the software for one full financial year (FY 2026-27).
+
+--------------------------------------------------------
+STEP 1 - Install MariaDB (the database)
+---------------------------------------------------------
+1. Download MariaDB 11.x MSI from:  https://mariadb.org/download/
+   (Choose "Windows x86_64" installer)
+2. Run the installer, click Next until "Set root password" appears.
+3. Set a root password you will remember (e.g. Triveni@2026) and note it.
+4. Keep the default port 3306. Finish the install.
+5. MariaDB starts automatically as a Windows service.
+
+If you prefer MySQL instead, its standard installer works the same way.
+
+--------------------------------------------------------
+STEP 2 - Install Node.js (runs the app)
+---------------------------------------------------------
+1. Download Node.js LTS (20.x or 22.x) MSI from: https://nodejs.org/
+2. Run the installer with default options (Next, Next, Finish).
+3. Node is used only to run the local server.
+
+--------------------------------------------------------
+STEP 3 - Place and configure the project
+---------------------------------------------------------
+1. Copy the whole project folder to the laptop.
+   Recommended path:  C:\TriVistaGST
+
+2. Open the file:   backend\.env.example
+   Copy it as:      backend\.env
+   Edit backend\.env:
+      - DB_PASSWORD = the root password you chose in Step 1
+      - JWT_SECRET  = keep the sample or paste a random string
+      - Leave IRP_ENDPOINT empty for now (sandbox mode)
+
+--------------------------------------------------------
+STEP 4 - One-time setup (needs internet once)
+---------------------------------------------------------
+1. Double-click:   setup.bat
+2. It installs dependencies, creates the database (triveni_gst_erp)
+   and loads clean masters: company profile, GST/HSN rate list,
+   chart of accounts, admin login. NO demo invoices are loaded,
+   so FY 2026-27 starts with a blank slate.
+
+--------------------------------------------------------
+STEP 5 - Start the app every time
+---------------------------------------------------------
+1. Double-click:   start.bat
+2. Your browser opens at  http://localhost:5000
+3. Login:  admin@triveni.local  /  Admin@123
+   (change this password immediately in Users page)
+
+--------------------------------------------------------
+Working with the trial year
+---------------------------------------------------------
+- Enter the company's real details in Settings:
+  GSTIN, legal name, PAN, bank, invoice prefix, TDS/TCS settings.
+- Add customers, vendors (with GSTIN + PAN) and products (with HSN + rate).
+- Raise tax invoices (B2B with customer GSTIN, B2C walk-in).
+- Purchases: record vendor bills; TDS auto-applies above the threshold.
+- e-Invoice: first use Sandbox (simulate IRN). To go live, set IRP_ENDPOINT
+  and IRP_AUTH in backend\.env using the GST Suvidha Provider credentials.
+- e-Way bill: set the transport distance on the invoice, generate Part-A.
+- Reports: GSTR-1, GSTR-3B (monthly), GSTR-9/9C, ITC Register, HSN Summary,
+  TDS 26Q, TCS 27EQ - export CSV, or download the whole CA-Export-Kit ZIP.
+- GSTR-2B reconciliation: import the monthly GSTR-2B CSV from the GST portal
+  and the system matches it against your purchase bills.
+- Audit Log: every login, create, edit and delete is recorded.
+- Backup: Settings > Backup - create a backup anytime (SQL file you can
+  keep on a pen drive / Drive); restore with the Restore button.
+
+--------------------------------------------------------
+End of year
+---------------------------------------------------------
+Use GSTR-9 / GSTR-9C report cards plus the full CA-Export-Kit to verify
+the year against the GST portal and the books.
+
+Support: contact TSA Enterprises with this folder version.
