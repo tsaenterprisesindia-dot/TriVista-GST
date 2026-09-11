@@ -27,7 +27,7 @@ async function updateSettings(req, res, next) {
     const allowed = [
       'company_name','gstin','pan','tan','address_line1','address_line2','city','state','state_code',
       'pincode','phone','email','website','logo_path','invoice_prefix','invoice_start_number',
-      'invoice_footer_note','bank_name','bank_account_no','bank_ifsc','gst_tax_preference','round_off',
+      'invoice_footer_note','bank_name','bank_account_no','bank_ifsc','upi_id','upi_beneficiary','gst_tax_preference','round_off',
       'business_type',
       'e_invoice_enabled','aggregate_turnover_crores','apply_tds','apply_tcs','tds_rate','tcs_rate',
       'tds_threshold','tcs_threshold',

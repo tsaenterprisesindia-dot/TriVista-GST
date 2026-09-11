@@ -26,6 +26,7 @@ const allNavItems = [
   { to: '/users', label: 'Users', hideForViewer: true, hl: true },
   { to: '/support', label: 'Support & Feedback' },
   { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true },
+  { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true },
 ];
 
 const labelFor = (t) =>

@@ -21,6 +21,8 @@ const fields = [
   'bank_name',
   'bank_account_no',
   'bank_ifsc',
+  'upi_id',
+  'upi_beneficiary',
   'gst_tax_preference',
   'round_off',
   'business_type',
@@ -288,6 +290,26 @@ export default function CompanySettings() {
             <div className="field">
               <label>IFSC</label>
               <input value={form.bank_ifsc} onChange={set('bank_ifsc')} />
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-title">UPI Payments</div>
+          <div className="grid-3">
+            <div className="field">
+              <label>UPI ID</label>
+              <input value={form.upi_id} onChange={set('upi_id')} placeholder="e.g. yourname@okhdfcbank" />
+            </div>
+            <div className="field">
+              <label>UPI Beneficiary Name (shown on QR / pay page)</label>
+              <input value={form.upi_beneficiary} onChange={set('upi_beneficiary')} placeholder="Name buyers see when paying" />
+            </div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Use this page to pay. In the <strong>Collect Payments</strong> menu you can create a shareable UPI
+                payment link (with QR + tap-to-pay) for any invoice or amount. Remember to save settings first.
+              </div>
             </div>
           </div>
         </div>

@@ -81,6 +81,8 @@ CREATE TABLE `company_settings` (
   `bank_name` VARCHAR(190) DEFAULT NULL,
   `bank_account_no` VARCHAR(40) DEFAULT NULL,
   `bank_ifsc` VARCHAR(20) DEFAULT NULL,
+  `upi_id` VARCHAR(50) DEFAULT NULL,
+  `upi_beneficiary` VARCHAR(190) DEFAULT NULL,
   `gst_tax_preference` ENUM('exclusive','inclusive') NOT NULL DEFAULT 'exclusive',
   `round_off` TINYINT(1) NOT NULL DEFAULT 1,
   `business_type` ENUM('retail','wholesale','services','mixed') NOT NULL DEFAULT 'mixed',
@@ -95,6 +97,25 @@ CREATE TABLE `company_settings` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- UPI / shareable payment collection links
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `payment_links` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `token` CHAR(32) NOT NULL,
+  `invoice_id` INT UNSIGNED DEFAULT NULL,
+  `amount` DECIMAL(14,2) DEFAULT NULL,
+  `note` VARCHAR(255) DEFAULT NULL,
+  `status` ENUM('active','paid','cancelled') NOT NULL DEFAULT 'active',
+  `paid_at` TIMESTAMP NULL DEFAULT NULL,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_paylink_token` (`token`),
+  KEY `idx_paylink_invoice` (`invoice_id`),
+  KEY `idx_paylink_status` (`status`)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

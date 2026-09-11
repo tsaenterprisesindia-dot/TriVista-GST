@@ -55,6 +55,8 @@ body::-webkit-scrollbar-corner, .main::-webkit-scrollbar-corner { background: #e
 .btn-primary:hover { background: var(--primary-dark); color: #fff; }
 .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
 .btn-danger:hover { background: #b91c1c; color: #fff; }
+.btn-success { background: var(--green); border-color: var(--green); color: #fff; }
+.btn-success:hover { background: #197a53; color: #fff; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 

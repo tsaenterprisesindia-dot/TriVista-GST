@@ -59,6 +59,10 @@ createPool();
 // Routes
 app.use('/api', routes);
 
+// Public UPI payment link page (must precede the SPA fallback below)
+const { renderPay } = require('./controllers/paymentLinkController');
+app.get('/pay/:token', renderPay);
+
 // Serve the built frontend (single-port deployment: laptop/VPS, one process)
 const distDir = process.env.FRONTEND_DIST || path.join(__dirname, '../../frontend/dist');
 if (fs.existsSync(distDir)) {
