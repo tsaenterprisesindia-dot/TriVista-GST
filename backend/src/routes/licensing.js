@@ -16,6 +16,8 @@ router.get('/:id', admin, c.get);
 router.post('/', admin, c.create);
 router.put('/:id', admin, c.update);
 router.post('/:id/renew', admin, c.renew);
+router.post('/:id/invoice', admin, c.invoice);
+router.post('/:id/pay', admin, c.pay);
 router.delete('/:id', admin, c.remove);
 
 module.exports = router;

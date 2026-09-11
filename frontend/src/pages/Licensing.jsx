@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -34,6 +35,7 @@ const emptyLic = {
 
 export default function Licensing() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(user?.role);
   const [plans, setPlans] = useState([]);
   const [items, setItems] = useState([]);
@@ -128,6 +130,26 @@ export default function Licensing() {
   const deleteLic = async (it) => {
     if (!window.confirm(`Delete license for "${it.client_name}"?`)) return;
     try { await api.del(`/licensing/${it.id}`); setSaved('Client license deleted.'); load(); } catch (err) { setError(err.message); }
+  };
+
+  const genLic = async (id, body) => {
+    setError(''); setSaved('');
+    try {
+      const r = await api.post(`/licensing/${id}/invoice`, body);
+      setSaved(`Invoice ${r.invoice_number} generated — ₹${r.grand_total.toLocaleString('en-IN')} (balance due ₹${r.balance_due.toLocaleString('en-IN')}). Record payment against it to collect.`);
+      load();
+      if (expanded === id) toggleExpand(id);
+    } catch (err) { setError(err.message); }
+  };
+
+  const payLic = async (id, body) => {
+    setError(''); setSaved('');
+    try {
+      const r = await api.post(`/licensing/${id}/pay`, body);
+      setSaved(`Payment recorded. Balance due ₹${r.balance_due.toLocaleString('en-IN')}.`);
+      load();
+      if (expanded === id) toggleExpand(id);
+    } catch (err) { setError(err.message); }
   };
 
   const setFil = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
@@ -269,7 +291,8 @@ export default function Licensing() {
               {items.map((it) => (
                 <LicRow key={it.id} it={it} expanded={expanded === it.id} toggle={() => toggleExpand(it.id)} detail={detail}
                   renewFormState={{ renewForm, setRenewForm }} submitRenew={submitRenew}
-                  updateLic={updateLic} deleteLic={deleteLic} plans={plans} STATUS={LICENSE_STATUSES} />
+                  updateLic={updateLic} deleteLic={deleteLic} plans={plans} STATUS={LICENSE_STATUSES}
+                  navigate={navigate} genLic={genLic} payLic={payLic} />
               ))}
             </tbody>
           </table>
@@ -289,8 +312,10 @@ function Stat({ label, value, sub }) {
   );
 }
 
-function LicRow({ it, expanded, toggle, detail, renewFormState, submitRenew, updateLic, deleteLic, plans, STATUS }) {
+function LicRow({ it, expanded, toggle, detail, renewFormState, submitRenew, updateLic, deleteLic, plans, STATUS, navigate, genLic, payLic }) {
   const [edit, setEdit] = useState(null);
+  const [payForm, setPayForm] = useState({ amount: '', date: new Date().toISOString().slice(0, 10), mode: 'UPI', reference_no: '', note: '' });
+  const [invForm, setInvForm] = useState({ amount: it.amount || '', paid_amount: '0', gst_rate: '18', payment_mode: 'UPI', reference_no: '' });
   const { renewForm, setRenewForm } = renewFormState;
   const planOpts = plans.filter((p) => p.is_active);
 
@@ -377,6 +402,44 @@ function LicRow({ it, expanded, toggle, detail, renewFormState, submitRenew, upd
                   <div className="field"><label>Method</label><input value={renewForm.payment_method} placeholder="UPI / NEFT / Card…" onChange={(e) => setRenewForm((f) => ({ ...f, payment_method: e.target.value }))} /></div>
                 </div>
                 <button className="btn btn-primary" onClick={() => submitRenew(it.id)}>Record renewal</button>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Billing &amp; collection</div>
+                {it.invoice_id ? (
+                  <>
+                    <div className="mb">
+                      <span className={`badge ${it.invoice_status === 'PAID' ? 'badge-green' : it.invoice_status === 'PARTIAL' ? 'badge-amber' : 'badge-blue'}`}>{it.invoice_status}</span>{' '}
+                      Invoice <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/invoices/${it.invoice_id}`); }}>{it.invoice_number}</a>
+                      {' '}— ₹{((it.invoice_grand || 0)).toLocaleString('en-IN')} (paid ₹{(((it.invoice_grand || 0) - (it.invoice_balance ?? 0))).toLocaleString('en-IN')}, balance ₹{(it.invoice_balance ?? 0).toLocaleString('en-IN')})
+                    </div>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Record payment received</div>
+                    <div className="grid-3">
+                      <div className="field"><label>Amount (₹) *</label><input type="number" min="0" step="0.01" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} /></div>
+                      <div className="field"><label>Date</label><input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} /></div>
+                      <div className="field"><label>Mode</label><input value={payForm.mode} onChange={(e) => setPayForm((f) => ({ ...f, mode: e.target.value }))} /></div>
+                      <div className="field"><label>Reference (UTR/UPI id)</label><input value={payForm.reference_no} onChange={(e) => setPayForm((f) => ({ ...f, reference_no: e.target.value }))} /></div>
+                      <div className="field"><label>Note</label><input value={payForm.note} onChange={(e) => setPayForm((f) => ({ ...f, note: e.target.value }))} /></div>
+                      <div className="field" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                        <button className="btn btn-primary" onClick={() => payLic(it.id, payForm)}>Record payment</button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="muted mb" style={{ margin: 0 }}>No invoice yet. Generate a GST sales invoice for this license; payment can be recorded against it right after.</div>
+                    <div className="grid-3">
+                      <div className="field"><label>Amount (₹, default = license amount)</label><input type="number" min="0" step="0.01" value={invForm.amount} onChange={(e) => setInvForm((f) => ({ ...f, amount: e.target.value }))} /></div>
+                      <div className="field"><label>Advance paid now (₹)</label><input type="number" min="0" step="0.01" value={invForm.paid_amount} onChange={(e) => setInvForm((f) => ({ ...f, paid_amount: e.target.value }))} /></div>
+                      <div className="field"><label>GST % (services)</label><input type="number" min="0" max="28" step="0.01" value={invForm.gst_rate} onChange={(e) => setInvForm((f) => ({ ...f, gst_rate: e.target.value }))} /></div>
+                      <div className="field"><label>Payment mode (advance)</label><input value={invForm.payment_mode} onChange={(e) => setInvForm((f) => ({ ...f, payment_mode: e.target.value }))} /></div>
+                      <div className="field"><label>Reference</label><input value={invForm.reference_no} onChange={(e) => setInvForm((f) => ({ ...f, reference_no: e.target.value }))} /></div>
+                      <div className="field" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                        <button className="btn btn-primary" onClick={() => genLic(it.id, invForm)}>Generate invoice</button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </td>

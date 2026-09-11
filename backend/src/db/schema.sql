@@ -678,12 +678,14 @@ CREATE TABLE `client_licenses` (
   `payment_status` ENUM('UNPAID','PARTIAL','PAID') NOT NULL DEFAULT 'UNPAID',
   `payment_method` VARCHAR(60) DEFAULT NULL,
   `notes` TEXT DEFAULT NULL,
+  `invoice_id` INT UNSIGNED DEFAULT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_lic_client` (`client_name`),
   KEY `idx_lic_status` (`status`),
   KEY `idx_lic_expiry` (`expiry_date`),
+  KEY `idx_lic_invoice` (`invoice_id`),
   CONSTRAINT `fk_lic_plan` FOREIGN KEY (`plan_id`) REFERENCES `license_plans` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 

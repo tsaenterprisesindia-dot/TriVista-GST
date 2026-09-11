@@ -456,4 +456,4 @@ async function refreshCustomerBalance(conn, customerId) {
   }
 }
 
-module.exports = { create, createInvoiceCore, list, get, addPayment, cancel };
+module.exports = { create, createInvoiceCore, list, get, addPayment, cancel, refreshCustomerBalance };

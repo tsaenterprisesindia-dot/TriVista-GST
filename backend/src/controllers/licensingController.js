@@ -1,5 +1,9 @@
 const { getPool } = require('../db');
 const { audit } = require('../utils/audit');
+const { isValidGstin } = require('../utils/gst');
+const { pad } = require('../utils/helpers');
+const { localDateStr } = require('../utils/helpers');
+const { createInvoiceCore, refreshCustomerBalance } = require('./invoiceController');
 
 const PLAN_TYPES = ['TRIAL', 'SUBSCRIPTION', 'ONETIME', 'LIFETIME'];
 const LIC_STATUSES = ['TRIAL', 'ACTIVE', 'EXPIRED', 'PAST_DUE', 'CANCELLED'];
@@ -28,6 +32,12 @@ function derivePaymentStatus(amount, paid) {
   if (p >= a && a > 0) return 'PAID';
   if (p > 0) return 'PARTIAL';
   return 'UNPAID';
+}
+
+const PAYMENT_MODES = ['CASH', 'CARD', 'UPI', 'BANK', 'OTHER'];
+function normalizeMode(m) {
+  const v = String(m || '').trim().toUpperCase();
+  return PAYMENT_MODES.includes(v) ? v : 'OTHER';
 }
 
 /* ---------------- Plans ---------------- */
@@ -187,9 +197,12 @@ async function list(req, res, next) {
     }
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const [rows] = await pool.query(
-      `SELECT l.*, p.name AS plan_name, p.type AS plan_type
+      `SELECT l.*, p.name AS plan_name, p.type AS plan_type,
+              inv.invoice_number AS invoice_number, inv.grand_total AS invoice_grand, inv.status AS invoice_status,
+              inv.balance_due AS invoice_balance
        FROM client_licenses l
        LEFT JOIN license_plans p ON p.id = l.plan_id
+       LEFT JOIN invoices inv ON inv.id = l.invoice_id
        ${whereSql}
        ORDER BY l.updated_at DESC, l.id DESC LIMIT 500`,
       params
@@ -204,8 +217,13 @@ async function get(req, res, next) {
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid client id.' });
     const pool = getPool();
     const [rows] = await pool.query(
-      `SELECT l.*, p.name AS plan_name, p.type AS plan_type
-       FROM client_licenses l LEFT JOIN license_plans p ON p.id = l.plan_id WHERE l.id=?`,
+      `SELECT l.*, p.name AS plan_name, p.type AS plan_type,
+              inv.invoice_number AS invoice_number, inv.grand_total AS invoice_grand, inv.status AS invoice_status,
+              inv.balance_due AS invoice_balance
+       FROM client_licenses l
+       LEFT JOIN license_plans p ON p.id = l.plan_id
+       LEFT JOIN invoices inv ON inv.id = l.invoice_id
+       WHERE l.id=?`,
       [id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Client license not found.' });
@@ -399,4 +417,171 @@ async function remove(req, res, next) {
   } catch (e) { next(e); }
 }
 
-module.exports = { listPlans, createPlan, updatePlan, deletePlan, stats, list, get, create, update, renew, remove };
+/**
+ * POST /api/licensing/:id/invoice
+ * Finds-or-creates a customer from the license, then raises a proper GST
+ * sales invoice (SAC 998314 software licensing) for the license amount.
+ * Optional paid_amount records payment against the invoice in the same step.
+ */
+async function invoice(req, res, next) {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid client id.' });
+    const b = req.body || {};
+    const [rows] = await conn.query('SELECT * FROM client_licenses WHERE id=? FOR UPDATE', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Client license not found.' });
+    const lic = rows[0];
+    if (lic.invoice_id) return res.status(400).json({ error: 'An invoice already exists for this license.' });
+
+    const amount = Math.max(0, Number(b.amount) || Number(lic.amount) || 0);
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'Nothing billable: license amount is ₹0. Set an amount or pass one.' });
+    }
+
+    await conn.beginTransaction();
+
+    // Find-or-create customer from the license record.
+    let customerId = null;
+    if (lic.gstin) {
+      const [c] = await conn.query('SELECT id FROM customers WHERE gstin=? AND is_active=1 LIMIT 1', [lic.gstin]);
+      if (c.length) customerId = c[0].id;
+    }
+    if (!customerId) {
+      const [c] = await conn.query(
+        'SELECT id FROM customers WHERE name=? AND phone<=>? AND email<=>? AND is_active=1 LIMIT 1',
+        [lic.client_name, lic.phone || null, lic.email || null]
+      );
+      if (c.length) customerId = c[0].id;
+    }
+    if (!customerId) {
+      const [[{ mx }]] = await conn.query('SELECT MAX(id) AS mx FROM customers');
+      const customer_code = `CUST-${pad((mx || 0) + 1, 4)}`;
+      const gstinOk = lic.gstin && isValidGstin(lic.gstin) ? lic.gstin : null;
+      const [cr] = await conn.query(
+        `INSERT INTO customers
+         (customer_code,name,company_name,gstin,phone,email,state_code,is_active,created_by)
+         VALUES (?,?,?,?,?,?,?,1,?)`,
+        [
+          customer_code, lic.client_name, lic.client_name, gstinOk || null,
+          lic.phone || null, lic.email || null, gstinOk ? gstinOk.slice(0, 2) : null,
+          req.user.id,
+        ]
+      );
+      customerId = cr.insertId;
+      await audit(req, 'CREATE', 'customer', customerId, { name: lic.client_name, gstin: gstinOk || null });
+    }
+
+    const gstRate = Number(b.gst_rate) || 18;
+    const itemName = lic.plan_name ? `Software license: ${lic.plan_name}` : 'Software license';
+    const paidAmount = Math.max(0, Number(b.paid_amount) || 0);
+    const paymentMode = normalizeMode(b.payment_mode);
+    const notes = `[Licensing] Client license #${lic.id}${b.notes ? ' — ' + String(b.notes) : ''}`;
+
+    const result = await createInvoiceCore(conn, req.user, {
+      customer_id: customerId,
+      invoice_date: b.invoice_date || localDateStr(),
+      due_date: b.due_date || null,
+      payment_mode: paymentMode,
+      paid_amount: paidAmount,
+      reference_no: b.reference_no || null,
+      notes,
+      items: [{
+        item_name: itemName,
+        hsn_code: b.hsn_code || '998314',
+        gst_rate: gstRate,
+        quantity: 1,
+        unit: 'SVC',
+        unit_price: amount,
+        discount: 0,
+      }],
+    });
+    const { id: invoiceId, invoice_number, grand_total } = result.resp;
+
+    const balance = round2Num(grand_total - paidAmount);
+    await conn.query(
+      `UPDATE client_licenses SET invoice_id=?, paid_amount=?, payment_status=?, payment_method=?
+       WHERE id=?`,
+      [invoiceId, Number(lic.paid_amount) + paidAmount, derivePaymentStatus(Math.max(amount, grand_total), Number(lic.paid_amount) + paidAmount), paymentMode, id]
+    );
+    await refreshCustomerBalance(conn, customerId);
+    await conn.commit();
+    await audit(req, 'LICENSE_INVOICE', 'client_license', id, {
+      invoice_number, invoice_id: invoiceId, amount, paid: paidAmount, grand_total,
+    });
+    res.status(201).json({ ok: true, invoice_id: invoiceId, invoice_number, grand_total, balance_due: balance });
+  } catch (e) {
+    await conn.rollback();
+    if (e instanceof Error && e.expose) return res.status(e.status || 400).json({ error: e.message });
+    next(e);
+  } finally {
+    conn.release();
+  }
+}
+
+function round2Num(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
+
+/**
+ * POST /api/licensing/:id/pay
+ * Records a payment against the license's linked invoice and syncs the
+ * license payment status.
+ */
+async function pay(req, res, next) {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid client id.' });
+    const { amount, mode, reference_no, date, note } = req.body || {};
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'Valid amount required.' });
+
+    const [rows] = await conn.query('SELECT * FROM client_licenses WHERE id=? FOR UPDATE', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Client license not found.' });
+    const lic = rows[0];
+    if (!lic.invoice_id) {
+      return res.status(400).json({ error: 'No invoice linked. Generate an invoice for this license first.' });
+    }
+
+    await conn.beginTransaction();
+    const [inv] = await conn.query('SELECT * FROM invoices WHERE id=? FOR UPDATE', [lic.invoice_id]);
+    if (!inv.length) throw Object.assign(new Error('Linked invoice not found.'), { status: 404 });
+    const invoice = inv[0];
+    if (invoice.status === 'CANCELLED') throw Object.assign(new Error('Cannot pay a cancelled invoice.'), { status: 400 });
+
+    const pending = Number(invoice.balance_due);
+    const payAmt = Math.min(Number(amount), pending);
+    if (payAmt <= 0) return res.status(400).json({ error: 'Invoice is already fully paid.' });
+
+    await conn.query(
+      `INSERT INTO payments (invoice_id,customer_id,date,amount,mode,reference_no,note,created_by)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [invoice.id, invoice.customer_id, date || localDateStr(), payAmt, normalizeMode(mode), reference_no || null, note || null, req.user.id]
+    );
+    const newPaid = Math.round((Number(invoice.paid_amount) + payAmt) * 100) / 100;
+    const newPending = Math.round((pending - payAmt) * 100) / 100;
+    await conn.query(
+      'UPDATE invoices SET paid_amount=?, balance_due=?, status=? WHERE id=?',
+      [newPaid, newPending, newPending === 0 ? 'PAID' : 'PARTIAL', invoice.id]
+    );
+    const licPaid = Number(lic.paid_amount) + payAmt;
+    await conn.query(
+      'UPDATE client_licenses SET paid_amount=?, payment_status=?, payment_method=COALESCE(?, payment_method) WHERE id=?',
+      [licPaid, derivePaymentStatus(Math.max(Number(lic.amount) || 0, Number(invoice.grand_total) || 0), licPaid), mode || null, id]
+    );
+    await refreshCustomerBalance(conn, invoice.customer_id);
+    await conn.commit();
+    await audit(req, 'LICENSE_PAY', 'client_license', id, {
+      amount: payAmt, mode: mode || 'OTHER', invoice_id: invoice.id, invoice_number: invoice.invoice_number,
+    });
+    res.json({ message: 'Payment recorded.', balance_due: newPending });
+  } catch (e) {
+    await conn.rollback();
+    if (e instanceof Error && e.expose) return res.status(e.status || 400).json({ error: e.message });
+    next(e);
+  } finally {
+    conn.release();
+  }
+}
+
+module.exports = { listPlans, createPlan, updatePlan, deletePlan, stats, list, get, create, update, renew, invoice, pay, remove };
