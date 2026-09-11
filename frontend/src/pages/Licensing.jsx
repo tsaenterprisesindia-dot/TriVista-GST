@@ -154,6 +154,9 @@ export default function Licensing() {
 
   const setFil = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
 
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const currentMonthPaid = (stats?.monthly || []).filter((r) => r.ym === thisMonth).reduce((s, r) => s + Number(r.total), 0) || null;
+
   return (
     <>
       {error && <div className="error-banner">{error}</div>}
@@ -166,7 +169,50 @@ export default function Licensing() {
         <Stat label="Past Due" value={stats?.past_due ?? '—'} sub={`${stats?.expired ?? 0} expired`} />
         <Stat label="Collected" value={inr(stats?.paid)} sub={`Invoiced ${inr(stats?.invoiced)}`} />
         <Stat label="Outstanding" value={inr(stats?.arrears)} />
+        <Stat label="This month" value={inr(currentMonthPaid)} sub="collected from licenses" />
+        <Stat label="Renewal revenue" value={inr(stats?.renewal_revenue)} />
       </div>
+
+      {(stats?.monthly?.length || 0) > 0 && (
+        <div className="grid-2">
+          <div className="card">
+            <div className="card-title">Revenue from licenses — last 6 months</div>
+            <Bars rows={stats.monthly} total={() => Math.max(...stats.monthly.map((r) => Number(r.total)), 1)} label={(r) => r.ym} fmt={(r) => inr(r.total)} />
+          </div>
+          <div className="card">
+            <div className="card-title">Plan mix (client count)</div>
+            <PlanMix rows={(stats.by_plan || []).filter((r) => Number(r.n) > 0)} fmt={(r) => `${r.name} · ${r.n}`} />
+          </div>
+        </div>
+      )}
+
+      {(stats?.upcoming?.length || 0) > 0 && (
+        <div className="card">
+          <div className="card-title">Renewals due in the next 30 days</div>
+          <table>
+            <thead>
+              <tr><th>Client</th><th>Plan</th><th>Expiry</th><th>Due in</th><th>Amount</th><th>Paid</th><th></th></tr>
+            </thead>
+            <tbody>
+              {stats.upcoming.map((u) => (
+                <tr key={u.id}>
+                  <td style={{ fontWeight: 600 }}>{u.client_name}</td>
+                  <td>{u.plan_name || '—'}</td>
+                  <td className="nowrap">{u.expiry_date}</td>
+                  <td>
+                    <span className={`badge ${u.days_left <= 7 ? 'badge-red' : u.days_left <= 14 ? 'badge-amber' : 'badge-blue'}`}>
+                      {u.days_left} day{u.days_left === 1 ? '' : 's'}
+                    </span>
+                  </td>
+                  <td className="right nowrap">{inr(u.amount)}</td>
+                  <td className="right nowrap">{inr(u.paid_amount)}</td>
+                  <td className="nowrap"><button className="btn btn-sm" onClick={() => toggleExpand(u.id)}>Manage</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-title">
@@ -308,6 +354,38 @@ function Stat({ label, value, sub }) {
       <div className="label">{label}</div>
       <div className="value">{value}</div>
       {sub && <div className="sub">{sub}</div>}
+    </div>
+  );
+}
+
+function Bars({ rows, total, label, fmt }) {
+  return (
+    <div className="bar-chart">
+      {rows.map((r) => {
+        const pct = Math.max(3, Math.round((Number(r.total) / total()) * 100));
+        return (
+          <div key={label(r)} className="bar-row" title={fmt(r)}>
+            <div className="bar-label">{label(r)}</div>
+            <div className="bar-track"><div className="bar-fill" style={{ width: `${pct}%` }} /></div>
+            <div className="bar-value">{fmt(r)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PlanMix({ rows, fmt }) {
+  const tot = rows.reduce((s, r) => s + Number(r.n), 0) || 1;
+  return (
+    <div className="bar-chart">
+      {rows.map((r) => (
+        <div key={r.plan_id || r.name} className="bar-row" title={fmt(r)}>
+          <div className="bar-label">{r.name}</div>
+          <div className="bar-track" style={{ background: 'var(--bg)' }}><div className="bar-fill" style={{ width: `${Math.max(4, Math.round((Number(r.n) / tot) * 100))}%`, background: 'var(--amber)' }} /></div>
+          <div className="bar-value">{fmt(r)}</div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -160,6 +160,35 @@ async function stats(req, res, next) {
          AND expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)`
     );
     const [[{ renewals }]] = await pool.query('SELECT COUNT(*) AS renewals FROM license_renewals');
+    const [[{ renewal_revenue }]] = await pool.query(
+      'SELECT COALESCE(SUM(amount),0) AS renewal_revenue FROM license_renewals'
+    );
+    const [monthlyRows] = await pool.query(
+      `SELECT DATE_FORMAT(p.date,'%Y-%m') AS ym, COALESCE(SUM(p.amount),0) AS total
+       FROM payments p
+       JOIN invoices i ON i.id=p.invoice_id
+       JOIN client_licenses l ON l.invoice_id=i.id
+       WHERE p.date >= DATE_SUB(DATE_FORMAT(CURDATE(),'%Y-%m-01'), INTERVAL 5 MONTH)
+       GROUP BY ym ORDER BY ym`
+    );
+    const [byPlanRows] = await pool.query(
+      `SELECT COALESCE(p.id,0) AS plan_id, COALESCE(p.name,'No plan') AS name,
+              COUNT(*) AS n, COALESCE(SUM(l.amount),0) AS gross
+       FROM client_licenses l
+       LEFT JOIN license_plans p ON p.id=l.plan_id
+       GROUP BY p.id ORDER BY n DESC`
+    );
+    const [upcomingRows] = await pool.query(
+      `SELECT l.id, l.client_name, l.contact_person, l.phone, l.email, l.status, l.amount, l.paid_amount,
+              l.invoice_id, l.expiry_date, p.name AS plan_name,
+              DATEDIFF(l.expiry_date, CURDATE()) AS days_left
+       FROM client_licenses l
+       LEFT JOIN license_plans p ON p.id=l.plan_id
+       WHERE l.status IN ('TRIAL','ACTIVE') AND l.expiry_date IS NOT NULL
+         AND l.expiry_date >= CURDATE()
+         AND DATEDIFF(l.expiry_date, CURDATE()) <= 30
+       ORDER BY l.expiry_date ASC, l.id DESC LIMIT 20`
+    );
     res.json({
       total,
       active: countOf('ACTIVE'),
@@ -169,9 +198,13 @@ async function stats(req, res, next) {
       cancelled: countOf('CANCELLED'),
       expiring_soon: Number(expiring),
       renewals: Number(renewals),
+      renewal_revenue: Number(renewal_revenue),
       invoiced: Number(invoiced),
       paid: Number(paid),
       arrears: Number(arrears),
+      monthly: monthlyRows,
+      by_plan: byPlanRows,
+      upcoming: upcomingRows,
     });
   } catch (e) { next(e); }
 }

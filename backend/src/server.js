@@ -94,4 +94,18 @@ const MIN = 60 * 1000;
 setTimeout(runRecurring, 5 * MIN);
 setInterval(runRecurring, 24 * 60 * MIN);
 
+// In-app alert sync (receivables, payables, stock, licence expiry) — keep fresh
+// so the bell has alerts even before /api/notifications is first opened.
+const { syncAlerts } = require('./controllers/notificationsController');
+const runAlerts = async () => {
+  try {
+    await syncAlerts(getPool());
+    console.log('[alerts] synced');
+  } catch (e) {
+    console.error('[alerts]', e.message);
+  }
+};
+setTimeout(runAlerts, 4 * MIN);
+setInterval(runAlerts, 6 * 60 * MIN);
+
 module.exports = app;

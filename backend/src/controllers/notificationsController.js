@@ -111,6 +111,44 @@ async function syncAlerts(pool) {
       );
     }
   }
+// --- License & subscription reminders: expiring soon / recently expired.
+  const [licenses] = await pool.query(
+    `SELECT l.id, l.client_name, l.expiry_date, l.amount, l.paid_amount, p.name AS plan_name,
+            DATEDIFF(l.expiry_date, CURDATE()) AS days_left
+     FROM client_licenses l
+     LEFT JOIN license_plans p ON p.id=l.plan_id
+     WHERE l.status IN ('TRIAL','ACTIVE') AND l.expiry_date IS NOT NULL
+       AND DATEDIFF(l.expiry_date, CURDATE()) BETWEEN -14 AND 30
+     ORDER BY l.expiry_date ASC`
+  );
+  for (const r of licenses) {
+    const overdueExp = r.days_left < 0;
+    await insert(
+      overdueExp ? 'license_expired' : 'license_expiring', r.id,
+      overdueExp
+        ? `License expired: ${r.client_name}`
+        : `License expiring in ${r.days_left} day(s): ${r.client_name}`,
+      `${r.client_name}${r.plan_name ? ' (' + r.plan_name + ')' : ''} — ${r.amount ? inr(r.amount) + (r.paid_amount ? ', paid ' + inr(r.paid_amount) : '') : 'no amount on file'}. Expiry ${r.expiry_date}.`,
+      overdueExp ? 'important' : 'warning', '/licensing'
+    );
+  }
+  // Drop reminders for licenses that no longer match (renewed / cancelled /
+  // completed) so the bell never stays stale.
+  const keepIds = licenses.map((r) => r.id);
+  if (keepIds.length) {
+    const ph = keepIds.map(() => '?').join(',');
+    await pool.query(
+      `DELETE FROM notifications
+       WHERE type IN ('license_expiring','license_expired')
+         AND (reference_id IS NULL OR reference_id NOT IN (${ph}))`,
+      keepIds
+    );
+  } else {
+    await pool.query(
+      `DELETE FROM notifications
+       WHERE type IN ('license_expiring','license_expired') AND reference_id IS NOT NULL`
+    );
+  }
 }
 
 /**

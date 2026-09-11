@@ -261,10 +261,11 @@ async function submitIrn(req, res, next) {
     try { data = JSON.parse(text); } catch (e) { /* IRP may answer non-JSON on error */ }
 
     const statusOk = String(data.Status) === '1' || (data.Irn || (data.EwbNo && payload.EwbDtls) || resp.ok && data.Irn);
+    const rawRespJson = JSON.stringify(text).slice(0, 4000);
     if (!statusOk) {
       await pool.query(
         `INSERT INTO einvoice_logs (invoice_id,status,raw_request,raw_response) VALUES (?,'FAILED',?,?)`,
-        [invId, JSON.stringify(payload), text.slice(0, 4000)]
+        [invId, JSON.stringify(payload), rawRespJson]
       );
       await audit(req, 'EINVOICE_FAIL', 'invoice', invId, { error: text.slice(0, 1000), invoice_number: null });
       return res.status(502).json({ error: 'IRP submission failed', detail: text.slice(0, 1000) });
@@ -285,7 +286,7 @@ async function submitIrn(req, res, next) {
     await pool.query(
       `INSERT INTO einvoice_logs (invoice_id,irn,ack_number,ack_date,status,signed_invoice,raw_request,raw_response,qr_url)
        VALUES (?,?,?,?, 'GENERATED',?,?,?,?)`,
-      [invId, irn || null, ack || null, ackDate, signed, JSON.stringify(payload), text.slice(0, 4000), qrUrl]
+      [invId, irn || null, ack || null, ackDate, signed, JSON.stringify(payload), rawRespJson, qrUrl]
     );
     await pool.query('UPDATE invoices SET irn=? WHERE id=?', [irn || null, invId]);
     await audit(req, 'EINVOICE_GENERATED', 'invoice', invId, { irn, invoice_number: inv.invoice_number });
@@ -309,70 +310,6 @@ async function einvoiceLogs(req, res, next) {
 }
 
 // ---------------- e-Way Bill ----------------
-async function generateEwaybill(req, res, next) {
-  try {
-    const invId = Number(req.params.id);
-    const b = req.body || {};
-    const pool = getPool();
-    const [invRows] = await pool.query(
-      `SELECT i.*, c.state_code AS cust_state FROM invoices i
-       LEFT JOIN customers c ON c.id=i.customer_id WHERE i.id=?`, [invId]
-    );
-    if (!invRows.length) return res.status(404).json({ error: 'Invoice not found.' });
-    const inv = invRows[0];
-    const [co] = await pool.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
-    const company = co[0] || {};
-    const [items] = await pool.query(
-      `SELECT ii.*, p.weight_kg FROM invoice_items ii LEFT JOIN products p ON p.id=ii.product_id WHERE ii.invoice_id=?`,
-      [invId]
-    );
-
-    // Weight comes from the master product weight_kg when known, else item weight_.
-    const totalWeight = items.reduce((s, it) => {
-      const kg = Number(it.weight_kg) || Number(it.weight_kg) || 0;
-      return s + (Number(it.quantity) || 0) * kg;
-    }, 0);
-
-    const payload = {
-      Vers: 1,
-      EwbNo: null,
-      EwbDtls: {
-        VehNo: b.vehicle_no || '',
-        Dist: Number(b.distance_km) || 0,
-        FromPlace: company.city || '',
-        FromPincode: company.pincode || '',
-        HsnWise: items.map((it) => ({ HsnCd: it.hsn_code || '', Qty: Number(it.quantity) || 0, Unit: it.unit || 'KGS', TaxableVal: Number(it.taxable_value) || 0 })).filter((x)=>x.HsnCd),
-        TotalValue: Number(inv.grand_total) || 0,
-        TotKg: totalWeight,
-        TransporterId: b.transporter_gstin || '',
-        TransDocNo: b.gcn_no || '',
-        TransMode: b.transporter_mode || '1',
-      },
-      BuyerGstin: inv.customer_gstin || 'URP',
-      BuyerState: inv.place_of_supply || inv.cust_state || '',
-      DocNo: inv.invoice_number,
-      DocDate: inv.invoice_date,
-      FromGstin: company.gstin || '',
-      FromState: company.state_code || '',
-    };
-
-    // Sandbox: no numeric assignment without real API creds.
-    await pool.query(
-      `INSERT INTO ewaybill_logs (invoice_id,status,transporter_name,vehicle_no,raw_request)
-       VALUES (?,'PENDING',?,?,?)`,
-      [invId, b.transporter_name || null, b.vehicle_no || null, JSON.stringify(payload)]
-    );
-    await audit(req, 'EWAYBILL_GENERATE', 'invoice', invId, { invoice_number: inv.invoice_number, distance_km: Number(b.distance_km) || 0 });
-
-    res.json({
-      message: 'e-Way Bill JSON prepared. Submit via GSTN e-Way Bill API or the official portal with your transporter token.',
-      payload,
-    });
-  } catch (e) {
-    next(e);
-  }
-}
-
 async function ewaybillLogs(req, res, next) {
   try {
     const pool = getPool();
@@ -386,4 +323,169 @@ async function ewaybillLogs(req, res, next) {
   }
 }
 
-module.exports = { buildEinvoicePayload, generateEinvoice, simulateIrn, submitIrn, einvoiceLogs, generateEwaybill, ewaybillLogs, getSettings, saveSettings };
+/**
+ * Build the e-Way Bill payload (GSTN EWB schema, simplified) for an invoice.
+ */
+async function buildEwayPayload(pool, invId, b) {
+  const [invRows] = await pool.query(
+    `SELECT i.*, c.state_code AS cust_state FROM invoices i
+     LEFT JOIN customers c ON c.id=i.customer_id WHERE i.id=?`, [invId]
+  );
+  if (!invRows.length) throw Object.assign(new Error('Invoice not found.'), { status: 404 });
+  const inv = invRows[0];
+  const [co] = await pool.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
+  const company = co[0] || {};
+  const [items] = await pool.query(
+    `SELECT ii.*, p.weight_kg FROM invoice_items ii LEFT JOIN products p ON p.id=ii.product_id WHERE ii.invoice_id=?`,
+    [invId]
+  );
+
+  const totalWeight = items.reduce((s, it) => {
+    const kg = Number(it.weight_kg) || 0;
+    return s + (Number(it.quantity) || 0) * kg;
+  }, 0);
+
+  return {
+    Vers: 1,
+    EwbNo: null,
+    EwbDtls: {
+      VehNo: b.vehicle_no || '',
+      Dist: Number(b.distance_km) || 0,
+      FromPlace: company.city || '',
+      FromPincode: company.pincode || '',
+      HsnWise: items.map((it) => ({ HsnCd: it.hsn_code || '', Qty: Number(it.quantity) || 0, Unit: it.unit || 'KGS', TaxableVal: Number(it.taxable_value) || 0 })).filter((x) => x.HsnCd),
+      TotalValue: Number(inv.grand_total) || 0,
+      TotKg: totalWeight,
+      TransporterId: b.transporter_gstin || '',
+      TransDocNo: b.gcn_no || '',
+      TransMode: b.transporter_mode || '1',
+    },
+    BuyerGstin: inv.customer_gstin || 'URP',
+    BuyerState: inv.place_of_supply || inv.cust_state || '',
+    DocNo: inv.invoice_number,
+    DocDate: inv.invoice_date,
+    FromGstin: company.gstin || '',
+    FromState: company.state_code || '',
+  };
+}
+
+async function generateEwaybill(req, res, next) {
+  try {
+    const invId = Number(req.params.id);
+    const b = req.body || {};
+    const pool = getPool();
+    const payload = await buildEwayPayload(pool, invId, b);
+    const [invRows] = await pool.query('SELECT invoice_number FROM invoices WHERE id=?', [invId]);
+
+    // Sandbox: no numeric assignment without real API creds.
+    await pool.query(
+      `INSERT INTO ewaybill_logs (invoice_id,status,transporter_name,vehicle_no,raw_request)
+       VALUES (?,'PENDING',?,?,?)`,
+      [invId, b.transporter_name || null, b.vehicle_no || null, JSON.stringify(payload)]
+    );
+    await audit(req, 'EWAYBILL_GENERATE', 'invoice', invId, { invoice_number: invRows[0]?.invoice_number || null, distance_km: Number(b.distance_km) || 0 });
+
+    res.json({
+      message: 'e-Way Bill JSON prepared. Submit via GSTN e-Way Bill API or the official portal with your transporter token.',
+      payload,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * POST /api/integration/ewaybill/:id/submit
+ * Submits the e-Way Bill to the live GSTN endpoint when EWB_ENDPOINT is
+ * configured; otherwise errors out to offline/sandbox mode.
+ */
+async function submitEway(req, res, next) {
+  try {
+    const invId = Number(req.params.id);
+    const b = req.body || {};
+    const pool = getPool();
+    const payload = await buildEwayPayload(pool, invId, b);
+    const [invRows] = await pool.query('SELECT invoice_number FROM invoices WHERE id=?', [invId]);
+
+    const endpoint = (process.env.EWB_ENDPOINT || '').trim();
+    if (!endpoint) {
+      return res.status(400).json({ error: 'EWB_ENDPOINT not configured. Run the offline generate for a sandbox payload.' });
+    }
+    const authHeader = (process.env.EWB_AUTH || '').trim();
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 40000) : null;
+    let resp, text = '';
+    try {
+      resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(authHeader ? { Authorization: authHeader } : {}) },
+        body: JSON.stringify(payload),
+        signal: controller ? controller.signal : undefined,
+      });
+      if (timer) clearTimeout(timer);
+      text = await resp.text();
+    } catch (err) {
+      if (timer) clearTimeout(timer);
+      await pool.query(
+        `INSERT INTO ewaybill_logs (invoice_id,status,raw_request,raw_response,transporter_name,vehicle_no)
+         VALUES (?,'FAILED',?,?,?,?)`,
+        [invId, JSON.stringify(payload), JSON.stringify({ error: String(err.message).slice(0, 1000) }), b.transporter_name || null, b.vehicle_no || null]
+      );
+      await audit(req, 'EWAYBILL_FAIL', 'invoice', invId, { error: String(err.message).slice(0, 500), invoice_number: invRows[0]?.invoice_number || null });
+      return res.status(502).json({ error: 'e-Way Bill submission failed', detail: String(err.message).slice(0, 500) });
+    }
+    let data = {};
+    try { data = JSON.parse(text); } catch (e) { /* EWB may answer non-JSON on error */ }
+
+    const ewbNo = data.EwbNo || data.EwbNo_ewbNo || data.ewbNo || data.Data?.EwbNo || null;
+    const statusOk = !!ewbNo || String(data.Status) === '1';
+    if (!statusOk) {
+      await pool.query(
+        `INSERT INTO ewaybill_logs (invoice_id,status,raw_request,raw_response,transporter_name,vehicle_no)
+         VALUES (?,'FAILED',?,?,?,?)`,
+        [invId, JSON.stringify(payload), JSON.stringify(text).slice(0, 4000), b.transporter_name || null, b.vehicle_no || null]
+      );
+      await audit(req, 'EWAYBILL_FAIL', 'invoice', invId, { error: text.slice(0, 1000), invoice_number: invRows[0]?.invoice_number || null });
+      return res.status(502).json({ error: 'e-Way Bill submission failed', detail: text.slice(0, 1000) });
+    }
+
+    await pool.query(
+      `INSERT INTO ewaybill_logs (invoice_id,ewb_no,status,transporter_name,vehicle_no,raw_request,raw_response)
+       VALUES (?,?,'GENERATED',?,?,?,?)`,
+      [invId, ewbNo, b.transporter_name || null, b.vehicle_no || null, JSON.stringify(payload), JSON.stringify(text).slice(0, 4000)]
+    );
+    await audit(req, 'EWAYBILL_GENERATED', 'invoice', invId, { ewb_no: ewbNo, invoice_number: invRows[0]?.invoice_number || null });
+    res.json({ ewb_no: ewbNo, message: 'e-Way Bill generated at the GST portal.' });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * GET /api/integration/status
+ * Lightweight live/offline spec for IRP & e-Way based on configured creds
+ * (no secrets returned). The UI shows LIVE / OFFLINE badges from this.
+ */
+async function status(req, res, next) {
+  try {
+    const strip = (k) => (process.env[k] || '').trim();
+    res.json({
+      irp: {
+        enabled: !!strip('IRP_ENDPOINT'),
+        endpoint: strip('IRP_ENDPOINT'),
+        auth_set: !!strip('IRP_AUTH'),
+        cancel_endpoint_set: !!strip('IRP_CANCEL_ENDPOINT'),
+      },
+      ewb: {
+        enabled: !!strip('EWB_ENDPOINT'),
+        endpoint: strip('EWB_ENDPOINT'),
+        auth_set: !!strip('EWB_AUTH'),
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+module.exports = { buildEinvoicePayload, generateEinvoice, simulateIrn, submitIrn, einvoiceLogs, generateEwaybill, submitEway, ewaybillLogs, status, getSettings, saveSettings };

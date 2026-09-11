@@ -48,6 +48,7 @@ export default function CompanySettings() {
     EWB_ENDPOINT: '',
     EWB_AUTH: '',
   });
+  const [intStatus, setIntStatus] = useState(null);
   const [credsMsg, setCredsMsg] = useState('');
 
   useEffect(() => {
@@ -67,6 +68,10 @@ export default function CompanySettings() {
     api
       .get('/integration/settings')
       .then((d) => setCreds((c) => ({ ...c, ...d, env_file: undefined })))
+      .catch(() => {});
+    api
+      .get('/integration/status')
+      .then(setIntStatus)
       .catch(() => {});
   }, []);
 
@@ -97,6 +102,7 @@ export default function CompanySettings() {
     try {
       const r = await api.put('/integration/settings', creds);
       setCredsMsg(r.message);
+      api.get('/integration/status').then(setIntStatus).catch(() => {});
     } catch (err) {
       setError(err.message);
       setCredsMsg('');
@@ -347,6 +353,17 @@ export default function CompanySettings() {
       <form onSubmit={saveCreds} style={{ marginTop: '16px' }}>
         <div className="card">
           <div className="card-title">Live IRP / e-Way Credentials</div>
+          <div className="flex" style={{ gap: 14, marginBottom: 10 }}>
+            <span className={`badge ${intStatus?.irp?.enabled ? 'badge-green' : 'badge-gray'}`}>
+              e-Invoice · {intStatus?.irp?.enabled ? 'LIVE' : 'OFFLINE'}
+            </span>
+            <span className={`badge ${intStatus?.ewb?.enabled ? 'badge-green' : 'badge-gray'}`}>
+              e-Way Bill · {intStatus?.ewb?.enabled ? 'LIVE' : 'OFFLINE'}
+            </span>
+            {(intStatus?.irp?.auth_set || intStatus?.ewb?.auth_set) && (
+              <span className="badge badge-amber">creds saved — auth {intStatus.irp.auth_set ? 'IRP' : ''}{intStatus.irp.auth_set && intStatus.ewb.auth_set ? ' & ' : ''}{intStatus.ewb.auth_set ? 'EWB' : ''}</span>
+            )}
+          </div>
           <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
             Enter the GSP credentials supplied for live operation. Saved to <code>backend/.env</code>, effective
             immediately — no restart needed. When blank, e-Invoice &amp; e-Way run in offline/sandbox mode and cannot
