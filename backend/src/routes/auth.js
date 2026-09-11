@@ -5,6 +5,7 @@ const { authenticate, authorize, requireSuperAdmin } = require('../middleware/au
 router.post('/login', c.login);
 router.get('/me', authenticate, c.me);
 router.post('/change-password', authenticate, c.changePassword);
+router.post('/accept-terms', authenticate, c.acceptTerms);
 
 // User management
 router.get('/users', authenticate, requireSuperAdmin, c.listUsers);

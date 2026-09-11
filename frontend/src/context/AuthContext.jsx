@@ -32,13 +32,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const acceptTerms = async () => {
+    const data = await api.post('/auth/accept-terms', {});
+    setToken(data.token);
+    setUser(data.user);
+    return data.user;
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, logout, acceptTerms }}>
       {children}
     </AuthContext.Provider>
   );

@@ -28,6 +28,7 @@ const allNavItems = [
   { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true },
   { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true },
   { to: '/account', label: 'My Account' },
+  { to: '/agreement', label: 'Terms & Conditions' },
 ];
 
 const labelFor = (t) =>

@@ -75,6 +75,17 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-lig
 label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 4px; }
 .field { margin-bottom: 12px; }
 
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { padding-right: 34px; }
+.pw-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: none; background: transparent;
+  color: var(--text-muted); cursor: pointer; border-radius: 6px;
+  line-height: 0; padding: 0;
+}
+.pw-toggle:hover { color: var(--text); background: #f1f5f9; }
+
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th {
   text-align: left; padding: 10px 12px; background: #f8fafc;

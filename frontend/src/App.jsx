@@ -26,11 +26,13 @@ import SupportCenter from './pages/SupportCenter';
 import Licensing from './pages/Licensing';
 import PaymentLinks from './pages/PaymentLinks';
 import Account from './pages/Account';
+import Agreement from './pages/Agreement';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="content">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.terms_accepted !== true) return <Navigate to="/agreement" replace />;
   return children;
 }
 
@@ -41,6 +43,7 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/agreement" element={user ? <Agreement /> : <Navigate to="/login" replace />} />
       <Route
         path="/"
         element={

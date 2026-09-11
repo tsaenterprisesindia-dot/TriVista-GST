@@ -23,6 +23,17 @@ function authenticate(req, res, next) {
       name: payload.name,
       role: payload.role,
     };
+    // Terms-of-service gate: block access until the user has accepted them.
+    const TERMS_WHITELIST = [
+      '/api/auth/login',
+      '/api/auth/me',
+      '/api/auth/accept-terms',
+      '/api/health',
+    ];
+    const cleanUrl = String(req.originalUrl || '').split('?')[0].replace(/\/+$/, '');
+    if (payload.terms !== true && !TERMS_WHITELIST.includes(cleanUrl)) {
+      return res.status(403).json({ error: 'You must accept the Terms of Service before using the application.', code: 'TERMS_REQUIRED' });
+    }
     // VIEWER accounts are otherwise read-only, but may submit support messages.
     const viewerFeedbackSubmit =
       req.method === 'POST' && req.originalUrl.replace(/\/+$/, '') === '/api/feedback';

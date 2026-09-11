@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import PasswordInput from '../components/PasswordInput';
 
 const ROLES = ['ADMIN', 'ACCOUNTANT', 'SALES', 'STORE', 'VIEWER'];
 
@@ -115,7 +116,7 @@ export default function Users() {
               </div>
               <div className="field">
                 <label>Password *</label>
-                <input value={form.password} onChange={set('password')} type="password" required />
+                <PasswordInput value={form.password} onChange={set('password')} autoComplete="new-password" required />
               </div>
               <div className="field">
                 <label>Phone</label>
@@ -185,13 +186,12 @@ export default function Users() {
                   <tr>
                     <td colSpan="6" style={{ background: 'var(--bg-soft)' }}>
                       <div className="flex" style={{ gap: 8 }}>
-                        <input
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder="New password (min 8 chars)"
+                        <PasswordInput
                           value={resetPw}
                           onChange={(e) => setResetPw(e.target.value)}
-                          style={{ maxWidth: 260 }}
+                          autoComplete="new-password"
+                          placeholder="New password (min 8 chars)"
+                          style={{ maxWidth: 280 }}
                         />
                         <button className="btn btn-primary btn-sm" onClick={() => resetPassword(u)}>Save</button>
                         <button className="btn btn-sm" onClick={() => { setResetId(null); setResetPw(''); }}>Cancel</button>

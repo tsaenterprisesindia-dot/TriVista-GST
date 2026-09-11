@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import PasswordInput from '../components/PasswordInput';
 
 export default function Account() {
   const { user } = useAuth();
@@ -66,15 +67,15 @@ export default function Account() {
           <div className="grid-3">
             <div className="field">
               <label>Current Password</label>
-              <input value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} type="password" autoComplete="current-password" required />
+              <PasswordInput value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required />
             </div>
             <div className="field">
               <label>New Password (min 8 chars)</label>
-              <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} type="password" autoComplete="new-password" required />
+              <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required />
             </div>
             <div className="field">
               <label>Confirm New Password</label>
-              <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" autoComplete="new-password" required />
+              <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required />
             </div>
           </div>
           <button className="btn btn-primary" type="submit">Update Password</button>
