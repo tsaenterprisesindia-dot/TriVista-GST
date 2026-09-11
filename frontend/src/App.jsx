@@ -22,6 +22,8 @@ import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 import CompanySettings from './pages/CompanySettings';
 import Users from './pages/Users';
+import SupportCenter from './pages/SupportCenter';
+import Licensing from './pages/Licensing';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -65,6 +67,8 @@ function App() {
         <Route path="audit" element={<Audit />} />
         <Route path="settings" element={<CompanySettings />} />
         <Route path="users" element={<Users />} />
+        <Route path="support" element={<SupportCenter />} />
+        <Route path="licensing" element={<Licensing />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

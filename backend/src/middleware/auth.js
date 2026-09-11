@@ -23,7 +23,14 @@ function authenticate(req, res, next) {
       name: payload.name,
       role: payload.role,
     };
-    if (req.user.role === 'VIEWER' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    // VIEWER accounts are otherwise read-only, but may submit support messages.
+    const viewerFeedbackSubmit =
+      req.method === 'POST' && req.originalUrl.replace(/\/+$/, '') === '/api/feedback';
+    if (
+      req.user.role === 'VIEWER' &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+      !viewerFeedbackSubmit
+    ) {
       return res.status(403).json({ error: 'Viewer accounts are read-only and cannot modify data.' });
     }
     next();

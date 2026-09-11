@@ -109,8 +109,8 @@ tr:hover td { background: #fafbff; }
   border-left: 3px solid transparent; transition: all 0.12s;
 }
 .sidebar a:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
-.sidebar a.active, .sidebar a.hl { background: var(--primary-deep); color: #fff; border-left-color: transparent; }
-.sidebar a.active:hover, .sidebar a.hl:hover { background: var(--primary-deeper); color: #fff; border-left-color: transparent; }
+.sidebar a.active { background: var(--primary-deep); color: #fff; border-left-color: transparent; }
+.sidebar a.active:hover { background: var(--primary-deeper); color: #fff; border-left-color: transparent; }
 .sidebar .spacer { flex: none; }
 .biz-badge {
   flex: none; margin: 8px 10px; padding: 5px 10px; border: 1px solid #2b3d6b; border-radius: 8px;

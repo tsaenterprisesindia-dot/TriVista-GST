@@ -24,6 +24,8 @@ const allNavItems = [
   { to: '/audit', label: 'Audit Log', hl: true },
   { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
   { to: '/users', label: 'Users', hideForViewer: true, hl: true },
+  { to: '/support', label: 'Support & Feedback' },
+  { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true },
 ];
 
 const labelFor = (t) =>

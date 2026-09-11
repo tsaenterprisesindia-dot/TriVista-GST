@@ -19,6 +19,8 @@ const notificationsRoutes = require('./notifications');
 const publicApiRoutes = require('./publicApi');
 const auditRoutes = require('./audit');
 const importRoutes = require('./imports');
+const feedbackRoutes = require('./feedback');
+const licensingRoutes = require('./licensing');
 
 router.use('/auth', authRoutes);
 router.use('/products', productRoutes);
@@ -39,5 +41,7 @@ router.use('/notifications', notificationsRoutes);
 router.use('/apikeys', publicApiRoutes);
 router.use('/audit', auditRoutes);
 router.use('/import', importRoutes);
+router.use('/feedback', feedbackRoutes);
+router.use('/licensing', licensingRoutes);
 
 module.exports = router;

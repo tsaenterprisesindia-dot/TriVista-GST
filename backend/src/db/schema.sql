@@ -620,6 +620,96 @@ CREATE TABLE `notifications` (
   KEY `idx_notif_read` (`is_read`)
 ) ENGINE=InnoDB;
 
+-- ------------------------------------------------------------
+-- Support / feedback center: suggestions, feedback, comments,
+-- complaints, requests and technical support from CAs & users
+-- ------------------------------------------------------------
+CREATE TABLE `support_messages` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `category` ENUM('SUGGESTION','FEEDBACK','COMMENT','COMPLAINT','REQUEST','TECHNICAL_SUPPORT','OTHER') NOT NULL,
+  `subject` VARCHAR(200) NOT NULL,
+  `message` TEXT NOT NULL,
+  `user_id` INT UNSIGNED DEFAULT NULL,
+  `user_name` VARCHAR(120) DEFAULT NULL,
+  `user_email` VARCHAR(190) DEFAULT NULL,
+  `status` ENUM('NEW','OPEN','IN_PROGRESS','RESOLVED','CLOSED') NOT NULL DEFAULT 'NEW',
+  `reply` TEXT DEFAULT NULL,
+  `replied_by` INT UNSIGNED DEFAULT NULL,
+  `replied_at` DATETIME DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_support_user` (`user_id`),
+  KEY `idx_support_status` (`status`),
+  KEY `idx_support_category` (`category`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Licensing & subscriptions: plan catalog, client licenses,
+-- renewal history (used by the firm to sell this ERP)
+-- ------------------------------------------------------------
+CREATE TABLE `license_plans` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(120) NOT NULL,
+  `type` ENUM('TRIAL','SUBSCRIPTION','ONETIME','LIFETIME') NOT NULL,
+  `duration_days` INT UNSIGNED DEFAULT NULL,
+  `price` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `seats` INT UNSIGNED NOT NULL DEFAULT 1,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_plans_type` (`type`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `client_licenses` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `plan_id` INT UNSIGNED DEFAULT NULL,
+  `client_name` VARCHAR(160) NOT NULL,
+  `contact_person` VARCHAR(120) DEFAULT NULL,
+  `phone` VARCHAR(30) DEFAULT NULL,
+  `email` VARCHAR(190) DEFAULT NULL,
+  `gstin` VARCHAR(15) DEFAULT NULL,
+  `start_date` DATE NOT NULL,
+  `expiry_date` DATE DEFAULT NULL,
+  `status` ENUM('TRIAL','ACTIVE','EXPIRED','PAST_DUE','CANCELLED') NOT NULL DEFAULT 'TRIAL',
+  `seats` INT UNSIGNED NOT NULL DEFAULT 1,
+  `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `paid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `payment_status` ENUM('UNPAID','PARTIAL','PAID') NOT NULL DEFAULT 'UNPAID',
+  `payment_method` VARCHAR(60) DEFAULT NULL,
+  `notes` TEXT DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_lic_client` (`client_name`),
+  KEY `idx_lic_status` (`status`),
+  KEY `idx_lic_expiry` (`expiry_date`),
+  CONSTRAINT `fk_lic_plan` FOREIGN KEY (`plan_id`) REFERENCES `license_plans` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE `license_renewals` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `license_id` INT UNSIGNED NOT NULL,
+  `plan_id` INT UNSIGNED DEFAULT NULL,
+  `from_date` DATE DEFAULT NULL,
+  `to_date` DATE DEFAULT NULL,
+  `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `paid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `payment_status` ENUM('UNPAID','PARTIAL','PAID') NOT NULL DEFAULT 'UNPAID',
+  `payment_method` VARCHAR(60) DEFAULT NULL,
+  `notes` TEXT DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_lr_license` (`license_id`),
+  CONSTRAINT `fk_lr_license` FOREIGN KEY (`license_id`) REFERENCES `client_licenses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+INSERT INTO `license_plans` (`name`,`type`,`duration_days`,`price`,`seats`,`is_active`) VALUES
+  ('Free Trial - 30 Days','TRIAL',30,0.00,1,1),
+  ('Monthly Subscription','SUBSCRIPTION',30,500.00,1,1),
+  ('Yearly Subscription','SUBSCRIPTION',365,5000.00,1,1),
+  ('One-Time Lifetime License','LIFETIME',NULL,15000.00,1,1);
+
 -- ============================================================
 -- Seed: default admin user & default chart of accounts
 -- Password for admin is: Admin@123
