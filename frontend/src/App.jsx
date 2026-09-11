@@ -25,6 +25,7 @@ import Users from './pages/Users';
 import SupportCenter from './pages/SupportCenter';
 import Licensing from './pages/Licensing';
 import PaymentLinks from './pages/PaymentLinks';
+import Account from './pages/Account';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -71,6 +72,7 @@ function App() {
         <Route path="support" element={<SupportCenter />} />
         <Route path="licensing" element={<Licensing />} />
         <Route path="payment-links" element={<PaymentLinks />} />
+        <Route path="account" element={<Account />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

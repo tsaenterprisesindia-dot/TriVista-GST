@@ -28,7 +28,13 @@ async function list(req, res, next) {
       `SELECT COUNT(*) AS total FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ${whereSql}`,
       params
     );
-    res.json({ data: rows, total });
+    // Login IDs (emails) are only visible to the project admin (SUPER_ADMIN);
+    // other roles keep the display name for accountability but not the email.
+    const data =
+      req.user?.role === 'SUPER_ADMIN'
+        ? rows
+        : rows.map((r) => ({ ...r, user_email: null }));
+    res.json({ data, total });
   } catch (e) {
     next(e);
   }

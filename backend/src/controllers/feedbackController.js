@@ -74,7 +74,16 @@ async function list(req, res, next) {
       `SELECT COUNT(*) AS total FROM support_messages s ${whereSql}`,
       params
     );
-    res.json({ data: rows, total });
+    // Login IDs (emails) are only visible to the author themselves and to the
+    // project admin (SUPER_ADMIN). Other viewers get the display name only.
+    const data = rows.map((r) => {
+      const isOwner = req.user?.id === r.user_id;
+      if (req.user?.role !== 'SUPER_ADMIN' && !isOwner) {
+        return { ...r, user_email: null };
+      }
+      return r;
+    });
+    res.json({ data, total });
   } catch (e) {
     next(e);
   }

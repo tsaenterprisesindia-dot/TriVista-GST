@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,6 +13,8 @@ export default function Users() {
   const [saved, setSaved] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(empty);
+  const [resetId, setResetId] = useState(null);
+  const [resetPw, setResetPw] = useState('');
 
   const load = () => {
     api.get('/auth/users').then(setUsers).catch((e) => setError(e.message));
@@ -55,6 +57,24 @@ export default function Users() {
   const toggleActive = async (u) => {
     try {
       await api.put(`/auth/users/${u.id}`, { name: u.name, phone: u.phone, role: u.role, is_active: !u.is_active });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const resetPassword = async (u) => {
+    setError('');
+    setSaved('');
+    if (!resetPw || resetPw.length < 8) {
+      setError('New password must be at least 8 characters.');
+      return;
+    }
+    try {
+      await api.put(`/auth/users/${u.id}`, { password: resetPw });
+      setSaved(`Password reset for ${u.email}. Share it with the user securely.`);
+      setResetId(null);
+      setResetPw('');
       load();
     } catch (err) {
       setError(err.message);
@@ -136,7 +156,8 @@ export default function Users() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id}>
+                <Fragment key={u.id}>
+                <tr>
                   <td>{u.name} <span className="muted">({u.phone || '—'})</span></td>
                   <td>{u.email}</td>
                   <td>
@@ -156,9 +177,29 @@ export default function Users() {
                   </td>
                   <td className="nowrap">{u.created_at}</td>
                   <td className="nowrap">
+                    <button className="btn btn-sm" onClick={() => setResetId(resetId === u.id ? null : u.id)}>Reset Password</button>{' '}
                     <button className="btn btn-sm btn-danger" onClick={() => remove(u)}>Delete</button>
                   </td>
                 </tr>
+                {resetId === u.id && (
+                  <tr>
+                    <td colSpan="6" style={{ background: 'var(--bg-soft)' }}>
+                      <div className="flex" style={{ gap: 8 }}>
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          placeholder="New password (min 8 chars)"
+                          value={resetPw}
+                          onChange={(e) => setResetPw(e.target.value)}
+                          style={{ maxWidth: 260 }}
+                        />
+                        <button className="btn btn-primary btn-sm" onClick={() => resetPassword(u)}>Save</button>
+                        <button className="btn btn-sm" onClick={() => { setResetId(null); setResetPw(''); }}>Cancel</button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

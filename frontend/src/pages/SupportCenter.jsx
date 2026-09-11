@@ -211,7 +211,7 @@ function FragmentRow({ it, isManager, managing, setManaging, saveManage, canDele
         <td className="nowrap">{it.created_at}</td>
         <td style={{ maxWidth: 180 }}>
           <div style={{ fontWeight: 600 }}>{it.user_name || '—'}</div>
-          <div className="muted" style={{ fontSize: 11, wordBreak: 'break-all' }}>{it.user_email}</div>
+          {it.user_email && <div className="muted" style={{ fontSize: 11, wordBreak: 'break-all' }}>{it.user_email}</div>}
         </td>
         <td><span className={`badge ${CATEGORY_BADGE[it.category] || 'badge-gray'}`}>{CATEGORY_LABEL[it.category] || it.category}</span></td>
         <td style={{ maxWidth: 360 }}>

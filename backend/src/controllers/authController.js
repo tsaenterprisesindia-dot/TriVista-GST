@@ -166,14 +166,24 @@ async function createUser(req, res, next) {
 
 async function updateUser(req, res, next) {
   try {
-    const { name, phone, role, is_active } = req.body || {};
+    const { name, phone, role, is_active, password } = req.body || {};
     const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'Invalid user id.' });
+    }
+    let hash = null;
+    if (password !== undefined && password !== null && String(password) !== '') {
+      if (String(password).length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+      }
+      hash = await bcrypt.hash(String(password), 10);
+    }
     const pool = getPool();
     await pool.query(
-      'UPDATE users SET name=COALESCE(?,name), phone=COALESCE(?,phone), role=COALESCE(?,role), is_active=COALESCE(?,is_active) WHERE id=?',
-      [name || null, phone || null, role || null, is_active === undefined ? null : is_active ? 1 : 0, id]
+      'UPDATE users SET name=COALESCE(?,name), phone=COALESCE(?,phone), role=COALESCE(?,role), is_active=COALESCE(?,is_active), password_hash=COALESCE(?,password_hash) WHERE id=?',
+      [name || null, phone || null, role || null, is_active === undefined ? null : is_active ? 1 : 0, hash, id]
     );
-    await audit(req, 'UPDATE', 'user', id, { name: name || null, phone: phone || null, role: role || null, is_active: is_active === undefined ? null : is_active ? 1 : 0 });
+    await audit(req, 'UPDATE', 'user', id, { name: name || null, phone: phone || null, role: role || null, is_active: is_active === undefined ? null : is_active ? 1 : 0, password_reset: !!hash });
     res.json({ message: 'User updated.' });
   } catch (e) {
     next(e);

@@ -23,10 +23,11 @@ const allNavItems = [
   { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true },
   { to: '/audit', label: 'Audit Log', hl: true },
   { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
-  { to: '/users', label: 'Users', hideForViewer: true, hl: true },
+  { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true },
   { to: '/support', label: 'Support & Feedback' },
   { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true },
   { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true },
+  { to: '/account', label: 'My Account' },
 ];
 
 const labelFor = (t) =>
@@ -54,7 +55,10 @@ export default function Layout() {
   };
 
   const navItems = allNavItems.filter(
-    (it) => !(it.hideForServices && bizType === 'services') && !(it.hideForViewer && user?.role === 'VIEWER')
+    (it) =>
+      !(it.hideForServices && bizType === 'services') &&
+      !(it.hideForViewer && user?.role === 'VIEWER') &&
+      !(it.superAdminOnly && user?.role !== 'SUPER_ADMIN')
   );
 
   return (
