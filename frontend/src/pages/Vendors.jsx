@@ -7,6 +7,7 @@ const inr = (n) =>
 
 const empty = {
   name: '',
+  company_name: '',
   gstin: '',
   pan: '',
   phone: '',
@@ -16,6 +17,8 @@ const empty = {
   state: '',
   state_code: '',
   pincode: '',
+  opening_balance: '',
+  is_active: true,
 };
 
 export default function Vendors() {
@@ -45,7 +48,10 @@ export default function Vendors() {
 
   useEffect(load, [q, page]);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (e) => {
+    const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setForm((f) => ({ ...f, [k]: v }));
+  };
 
   const openNew = () => {
     setEditId(null);
@@ -57,15 +63,18 @@ export default function Vendors() {
     setEditId(v.id);
     setForm({
       name: v.name,
+      company_name: v.company_name,
       gstin: v.gstin,
       pan: v.pan,
       phone: v.phone,
       email: v.email,
-      address_line1: '',
+      address_line1: v.address_line1,
       city: v.city,
       state: v.state,
       state_code: v.state_code,
-      pincode: '',
+      pincode: v.pincode,
+      opening_balance: v.opening_balance,
+      is_active: !!v.is_active,
     });
     setShowForm(true);
   };
@@ -78,8 +87,25 @@ export default function Vendors() {
       const res = editId
         ? await api.put(`/vendors/${editId}`, form)
         : await api.post('/vendors', form);
-      setSaved(editId ? 'Vendor updated.' : `Vendor created with code ${res.vendor_code}.`);
+      setSaved(
+        editId
+          ? 'Vendor updated.'
+          : `Vendor created with code ${res.vendor_code}.`
+      );
       setShowForm(false);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const remove = async (v) => {
+    if (!window.confirm(`Delete vendor "${v.name}"?`)) return;
+    setError('');
+    setSaved('');
+    try {
+      const r = await api.del(`/vendors/${v.id}`);
+      setSaved(r.message || 'Vendor deleted.');
       load();
     } catch (err) {
       setError(err.message);
@@ -120,8 +146,12 @@ export default function Vendors() {
                 <input value={form.name} onChange={set('name')} required />
               </div>
               <div className="field">
+                <label>Company</label>
+                <input value={form.company_name} onChange={set('company_name')} />
+              </div>
+              <div className="field">
                 <label>GSTIN</label>
-                <input value={form.gstin} onChange={set('gstin')} />
+                <input value={form.gstin} onChange={set('gstin')} placeholder="Optional" />
               </div>
               <div className="field">
                 <label>PAN</label>
@@ -155,6 +185,16 @@ export default function Vendors() {
                 <label>Pincode</label>
                 <input value={form.pincode} onChange={set('pincode')} />
               </div>
+              <div className="field">
+                <label>Opening Balance</label>
+                <input value={form.opening_balance} onChange={set('opening_balance')} type="number" step="0.01" />
+              </div>
+              <div className="field">
+                <label>
+                  <input type="checkbox" checked={form.is_active} onChange={set('is_active')} style={{ width: 'auto' }} />{' '}
+                  Active
+                </label>
+              </div>
             </div>
             <div className="flex">
               <button className="btn btn-primary" type="submit">{editId ? 'Save Changes' : 'Create Vendor'}</button>
@@ -176,12 +216,13 @@ export default function Vendors() {
               <tr>
                 <th>Code</th>
                 <th>Name</th>
+                <th>Company</th>
                 <th>GSTIN</th>
                 <th>PAN</th>
                 <th>Phone</th>
-                <th>Email</th>
                 <th>City</th>
-                <th>State</th>
+                <th className="right">Opening Balance</th>
+                <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -190,14 +231,18 @@ export default function Vendors() {
                 <tr key={v.id}>
                   <td className="nowrap">{v.vendor_code || '—'}</td>
                   <td>{v.name}</td>
+                  <td>{v.company_name || '—'}</td>
                   <td className="nowrap">{v.gstin || '—'}</td>
                   <td className="nowrap">{v.pan || '—'}</td>
                   <td className="nowrap">{v.phone || '—'}</td>
-                  <td>{v.email || '—'}</td>
                   <td>{v.city || '—'}</td>
-                  <td>{v.state || '—'}</td>
+                  <td className="right nowrap">{inr(v.opening_balance)}</td>
+                  <td>
+                    {v.is_active ? <span className="badge badge-green">ACTIVE</span> : <span className="badge badge-gray">INACTIVE</span>}
+                  </td>
                   <td className="nowrap">
-                    <button className="btn btn-sm" onClick={() => openEdit(v)}>Edit</button>
+                    <button className="btn btn-sm" onClick={() => openEdit(v)}>Edit</button>{' '}
+                    <button className="btn btn-sm btn-danger" onClick={() => remove(v)}>Delete</button>
                   </td>
                 </tr>
               ))}

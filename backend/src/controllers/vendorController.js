@@ -10,9 +10,9 @@ async function list(req, res, next) {
     const where = [];
     const params = [];
     if (q) {
-      where.push('(name LIKE ? OR company_name LIKE ? OR phone LIKE ? OR gstin LIKE ? OR vendor_code LIKE ?)');
+      where.push('(name LIKE ? OR company_name LIKE ? OR phone LIKE ? OR gstin LIKE ? OR vendor_code LIKE ? OR city LIKE ? OR email LIKE ?)');
       const like = `%${q}%`;
-      params.push(like, like, like, like, like);
+      params.push(like, like, like, like, like, like, like);
     }
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const offset = (Number(page) - 1) * Number(limit);
@@ -37,11 +37,11 @@ async function create(req, res, next) {
     const [mx] = await pool.query('SELECT COALESCE(MAX(id),0) AS mx FROM vendors');
     const code = `VEND-${pad((mx[0].mx || 0) + 1, 4)}`;
     const [r] = await pool.query(
-      `INSERT INTO vendors (vendor_code,name,company_name,gstin,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO vendors (vendor_code,name,company_name,gstin,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,is_active)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [code, b.name, b.company_name || null, b.gstin || null, b.pan || null, b.phone || null, b.email || null,
        b.address_line1 || null, b.city || null, b.state || null, b.state_code || null, b.pincode || null,
-       Number(b.opening_balance) || 0]
+       Number(b.opening_balance) || 0, b.is_active === undefined ? 1 : b.is_active ? 1 : 0]
     );
     await audit(req, 'CREATE', 'vendor', r.insertId, { name: b.name, gstin: b.gstin || null, pan: b.pan || null });
     res.status(201).json({ id: r.insertId, vendor_code: code, message: 'Vendor created.' });
@@ -55,11 +55,21 @@ async function update(req, res, next) {
     const id = Number(req.params.id);
     const b = req.body || {};
     if (!id) return res.status(400).json({ error: 'Vendor id required.' });
-    const fields = ['name','company_name','gstin','pan','phone','email','address_line1','city','state','state_code','pincode','opening_balance'];
+    if (b.gstin !== undefined && b.gstin !== '' && !isValidGstin(b.gstin)) {
+      return res.status(400).json({ error: 'Invalid GSTIN format.' });
+    }
+    const [[exists]] = await getPool().query('SELECT id FROM vendors WHERE id=?', [id]);
+    if (!exists) return res.status(404).json({ error: 'Vendor not found.' });
+    const fields = ['name','company_name','gstin','pan','phone','email','address_line1','city','state','state_code','pincode','opening_balance','is_active'];
     const sets = [];
     const params = [];
     for (const f of fields) {
-      if (b[f] !== undefined) { sets.push(`${f}=?`); params.push(b[f]); }
+      if (b[f] !== undefined) {
+        let val = b[f];
+        if (f === 'is_active') val = val ? 1 : 0;
+        sets.push(`${f}=?`);
+        params.push(val);
+      }
     }
     if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
     params.push(id);

@@ -8,7 +8,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const { createPool } = require('./db');
+const { createPool, getPool } = require('./db');
 const routes = require('./routes');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
