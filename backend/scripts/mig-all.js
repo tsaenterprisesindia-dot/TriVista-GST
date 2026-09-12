@@ -29,6 +29,8 @@ const ORDER = [
   'mig-06-ledger.js',
   'mig-07-business-master.js',
   'mig-08-branches.js',
+  'mig-09-parties.js',
+  'mig-10-invoice-type.js',
 ];
 
 const DB = {

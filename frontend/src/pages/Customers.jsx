@@ -9,6 +9,8 @@ const empty = {
   name: '',
   company_name: '',
   gstin: '',
+  registration_category: '',
+  tax_exempt: false,
   pan: '',
   phone: '',
   email: '',
@@ -20,7 +22,28 @@ const empty = {
   pincode: '',
   opening_balance: '',
   credit_limit: '',
+  tds_rate: '',
+  tcs_rate: '',
+  tds_threshold: '',
+  tcs_threshold: '',
   is_active: true,
+};
+
+const CAT = [
+  { v: '', l: '— Auto (from GSTIN) —' },
+  { v: 'registered', l: 'Registered (B2B)' },
+  { v: 'unregistered', l: 'Unregistered (B2C)' },
+  { v: 'composition', l: 'Composition Dealer' },
+  { v: 'sez', l: 'SEZ' },
+  { v: 'export', l: 'Export' },
+];
+
+const catBadge = (c) => {
+  const cat = c.registration_category || (c.gstin ? 'registered' : 'unregistered');
+  if (cat === 'export') return <span className="badge badge-amber">EXP</span>;
+  if (cat === 'sez') return <span className="badge badge-amber">SEZ</span>;
+  if (cat === 'composition') return <span className="badge badge-amber">COMP</span>;
+  return cat === 'unregistered' ? <span className="badge badge-gray">B2C</span> : <span className="badge badge-green">B2B</span>;
 };
 
 export default function Customers() {
@@ -67,6 +90,8 @@ export default function Customers() {
       name: c.name,
       company_name: c.company_name,
       gstin: c.gstin,
+      registration_category: c.registration_category || '',
+      tax_exempt: !!c.tax_exempt,
       pan: c.pan,
       phone: c.phone,
       email: c.email,
@@ -78,6 +103,10 @@ export default function Customers() {
       pincode: c.pincode,
       opening_balance: c.opening_balance,
       credit_limit: c.credit_limit,
+      tds_rate: c.tds_rate ?? '',
+      tcs_rate: c.tcs_rate ?? '',
+      tds_threshold: c.tds_threshold ?? '',
+      tcs_threshold: c.tcs_threshold ?? '',
       is_active: !!c.is_active,
     });
     setShowForm(true);
@@ -151,6 +180,20 @@ export default function Customers() {
                 <input value={form.gstin} onChange={set('gstin')} placeholder="Optional" />
               </div>
               <div className="field">
+                <label>Registration Category</label>
+                <select value={form.registration_category} onChange={set('registration_category')}>
+                  {CAT.map((c) => (
+                    <option key={c.v} value={c.v}>{c.l}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>
+                  <input type="checkbox" checked={form.tax_exempt} onChange={set('tax_exempt')} style={{ width: 'auto' }} />{' '}
+                  Tax Exempt (nil-rated invoices)
+                </label>
+              </div>
+              <div className="field">
                 <label>PAN</label>
                 <input value={form.pan} onChange={set('pan')} maxLength={10} placeholder="Optional — avoids 1% TCS" />
               </div>
@@ -193,6 +236,22 @@ export default function Customers() {
               <div className="field">
                 <label>Credit Limit</label>
                 <input value={form.credit_limit} onChange={set('credit_limit')} type="number" step="0.01" />
+              </div>
+              <div className="field">
+                <label>TCS Rate %</label>
+                <input value={form.tcs_rate} onChange={set('tcs_rate')} type="number" step="0.01" min="0" placeholder="Blank = company default" />
+              </div>
+              <div className="field">
+                <label>TCS Threshold ₹</label>
+                <input value={form.tcs_threshold} onChange={set('tcs_threshold')} type="number" step="1" min="0" placeholder="Blank = company default" />
+              </div>
+              <div className="field">
+                <label>TDS Rate %</label>
+                <input value={form.tds_rate} onChange={set('tds_rate')} type="number" step="0.01" min="0" placeholder="Blank = company default" />
+              </div>
+              <div className="field">
+                <label>TDS Threshold ₹</label>
+                <input value={form.tds_threshold} onChange={set('tds_threshold')} type="number" step="1" min="0" placeholder="Blank = company default" />
               </div>
               <div className="field">
                 <label>
@@ -238,7 +297,11 @@ export default function Customers() {
                   <td className="nowrap">{c.customer_code || '—'}</td>
                   <td>{c.name}</td>
                   <td>{c.company_name || '—'}</td>
-                  <td className="nowrap">{c.gstin || '—'}</td>
+                  <td className="nowrap">
+                    {c.gstin || '—'}
+                    {c.gstin && <br />}
+                    {catBadge(c)}
+                  </td>
                   <td className="nowrap">{c.pan || '—'}</td>
                   <td className="nowrap">{c.phone || '—'}</td>
                   <td>{c.city || '—'}</td>

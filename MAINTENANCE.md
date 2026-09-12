@@ -107,6 +107,32 @@ Existing migrations (order as defined in mig-all.js):
 | `mig-06-ledger.js` | Double-entry general ledger: `journal_entries` table, `transactions.journal_id/voucher_no`, `payments.bill_id`, input-GST + round-off accounts, balanced backfill of existing invoices/payments/purchase bills |
 | `mig-07-business-master.js` | Business/Enterprise Master: `company_settings.legal_name/trade_name/constitution`; backfills legal_name from company_name |
 | `mig-08-branches.js` | Unit/Branch Management: `branches.invoice_start_number`, `company_settings.active_branch_id`, `invoice_series.branch_id` (per-branch series keyed `branch_id+fy+type`), re-homes existing series to the head office |
+| `mig-09-parties.js` | Customer & Supplier classification + per-party taxes: `customers.registration_category/tax_exempt/tds_rate/tcs_rate/tds_threshold/tcs_threshold`, `vendors.registration_category/tax_exempt/rcm_default/tds_rate/tds_threshold`; backfills category from GSTIN |
+| `mig-10-invoice-type.js` | `invoices.invoice_type` widened from `enum('B2B','B2C')` to include `CREDIT_NOTE/DEBIT_NOTE/EXPORT/NIL` (values were silently truncated to `''`); backfills affected rows from the party classification |
+
+### Customer & Supplier classification + per-party taxes
+Every customer/vendor carries a **registration category** - Registered (B2B),
+Unregistered (B2C), Composition Dealer, SEZ or Export - stored on the party master
+(backfilled from GSTIN presence; the old "GSTIN ⇒ B2B" rule is only the fallback).
+
+- **Document type defaulting** (`/api/invoices`): no explicit `invoice_type` →
+  `export` ⇒ `EXPORT`, `unregistered` ⇒ `B2C`, otherwise `B2B`. `CREDIT_NOTE` /
+  `DEBIT_NOTE` / `NIL` / `EXPORT` are now stored correctly (the column previously
+  truncated them to `''`).
+- **Tax-exempt party**: `tax_exempt` on customer/vendor produces nil-rated
+  invoices - taxable value is kept, GST is zeroed (like `NIL` handling but with
+  the value reported).
+- **Per-party TDS/TCS overrides** (used when `apply_tcs` / `apply_tds` enabled):
+  `tcs_rate/tcs_threshold` on the customer override the company defaults under
+  206C(1H); `tds_rate/tds_threshold` on the vendor override under 194Q. The PAN-
+  absent higher rates (206CC 1%, 206AA 5%) still take precedence over any custom
+  rate.
+- **RCM default**: `vendors.rcm_default` makes purchases auto-reverse-charge for
+  registered vendors supplying notified services; unregistered vendors remain
+  auto-RCM regardless. An explicit `is_rcm` on the purchase payload wins.
+- UI: Customers / Vendors forms show the category dropdown, tax-exempt flag, RCM
+  default and the TDS/TCS overrides; the party lists show a classification badge
+  (B2B/B2C/COMP/SEZ/EXP).
 
 ### Unit / Branch Management
 Units/branches are managed under Settings - Units / Branches (`/api/branches`). Each unit can carry

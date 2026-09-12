@@ -17,7 +17,7 @@ async function list(req, res, next) {
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const offset = (Number(page) - 1) * Number(limit);
     const [rows] = await pool.query(
-      `SELECT id,vendor_code,name,company_name,gstin,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,is_active,created_at
+      `SELECT id,vendor_code,name,company_name,gstin,registration_category,tax_exempt,rcm_default,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,tds_rate,tds_threshold,is_active,created_at
        FROM vendors ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
       [...params, Number(limit), offset]
     );
@@ -28,6 +28,9 @@ async function list(req, res, next) {
   }
 }
 
+const CATEGORIES = ['registered', 'unregistered', 'composition', 'sez', 'export'];
+const cleanCat = (v) => (CATEGORIES.includes(v) ? v : null);
+
 async function create(req, res, next) {
   try {
     const b = req.body || {};
@@ -37,11 +40,13 @@ async function create(req, res, next) {
     const [mx] = await pool.query('SELECT COALESCE(MAX(id),0) AS mx FROM vendors');
     const code = `VEND-${pad((mx[0].mx || 0) + 1, 4)}`;
     const [r] = await pool.query(
-      `INSERT INTO vendors (vendor_code,name,company_name,gstin,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,is_active)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [code, b.name, b.company_name || null, b.gstin || null, b.pan || null, b.phone || null, b.email || null,
-       b.address_line1 || null, b.city || null, b.state || null, b.state_code || null, b.pincode || null,
-       Number(b.opening_balance) || 0, b.is_active === undefined ? 1 : b.is_active ? 1 : 0]
+      `INSERT INTO vendors (vendor_code,name,company_name,gstin,registration_category,tax_exempt,rcm_default,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,tds_rate,tds_threshold,is_active)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [code, b.name, b.company_name || null, b.gstin || null, cleanCat(b.registration_category), b.tax_exempt ? 1 : 0, b.rcm_default ? 1 : 0,
+       b.pan || null, b.phone || null, b.email || null, b.address_line1 || null, b.city || null, b.state || null,
+       b.state_code || null, b.pincode || null, Number(b.opening_balance) || 0,
+       b.tds_rate == null ? null : Number(b.tds_rate), b.tds_threshold == null ? null : Number(b.tds_threshold),
+       b.is_active === undefined ? 1 : b.is_active ? 1 : 0]
     );
     await audit(req, 'CREATE', 'vendor', r.insertId, { name: b.name, gstin: b.gstin || null, pan: b.pan || null });
     res.status(201).json({ id: r.insertId, vendor_code: code, message: 'Vendor created.' });
@@ -69,6 +74,15 @@ async function update(req, res, next) {
         if (f === 'is_active') val = val ? 1 : 0;
         sets.push(`${f}=?`);
         params.push(val);
+      }
+    }
+    if (b.registration_category !== undefined) { sets.push('registration_category=?'); params.push(cleanCat(b.registration_category)); }
+    if (b.tax_exempt !== undefined) { sets.push('tax_exempt=?'); params.push(b.tax_exempt ? 1 : 0); }
+    if (b.rcm_default !== undefined) { sets.push('rcm_default=?'); params.push(b.rcm_default ? 1 : 0); }
+    for (const f of ['tds_rate','tds_threshold']) {
+      if (b[f] !== undefined) {
+        if (b[f] === '' || b[f] == null) sets.push(`${f}=NULL`);
+        else { sets.push(`${f}=?`); params.push(Number(b[f])); }
       }
     }
     if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });

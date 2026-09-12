@@ -9,6 +9,9 @@ const empty = {
   name: '',
   company_name: '',
   gstin: '',
+  registration_category: '',
+  tax_exempt: false,
+  rcm_default: false,
   pan: '',
   phone: '',
   email: '',
@@ -18,7 +21,26 @@ const empty = {
   state_code: '',
   pincode: '',
   opening_balance: '',
+  tds_rate: '',
+  tds_threshold: '',
   is_active: true,
+};
+
+const CAT = [
+  { v: '', l: '— Auto (from GSTIN) —' },
+  { v: 'registered', l: 'Registered (RCM: off)' },
+  { v: 'unregistered', l: 'Unregistered (RCM: auto)' },
+  { v: 'composition', l: 'Composition Dealer' },
+  { v: 'sez', l: 'SEZ' },
+  { v: 'export', l: 'Export' },
+];
+
+const catBadge = (v) => {
+  const cat = v.registration_category || (v.gstin ? 'registered' : 'unregistered');
+  if (cat === 'export') return <span className="badge badge-amber">EXP</span>;
+  if (cat === 'sez') return <span className="badge badge-amber">SEZ</span>;
+  if (cat === 'composition') return <span className="badge badge-amber">COMP</span>;
+  return cat === 'unregistered' ? <span className="badge badge-gray">UNREG</span> : <span className="badge badge-green">REG</span>;
 };
 
 export default function Vendors() {
@@ -65,6 +87,9 @@ export default function Vendors() {
       name: v.name,
       company_name: v.company_name,
       gstin: v.gstin,
+      registration_category: v.registration_category || '',
+      tax_exempt: !!v.tax_exempt,
+      rcm_default: !!v.rcm_default,
       pan: v.pan,
       phone: v.phone,
       email: v.email,
@@ -74,6 +99,8 @@ export default function Vendors() {
       state_code: v.state_code,
       pincode: v.pincode,
       opening_balance: v.opening_balance,
+      tds_rate: v.tds_rate ?? '',
+      tds_threshold: v.tds_threshold ?? '',
       is_active: !!v.is_active,
     });
     setShowForm(true);
@@ -154,6 +181,26 @@ export default function Vendors() {
                 <input value={form.gstin} onChange={set('gstin')} placeholder="Optional" />
               </div>
               <div className="field">
+                <label>Registration Category</label>
+                <select value={form.registration_category} onChange={set('registration_category')}>
+                  {CAT.map((c) => (
+                    <option key={c.v} value={c.v}>{c.l}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>
+                  <input type="checkbox" checked={form.rcm_default} onChange={set('rcm_default')} style={{ width: 'auto' }} />{' '}
+                  Default RCM
+                </label>
+              </div>
+              <div className="field">
+                <label>
+                  <input type="checkbox" checked={form.tax_exempt} onChange={set('tax_exempt')} style={{ width: 'auto' }} />{' '}
+                  Tax Exempt
+                </label>
+              </div>
+              <div className="field">
                 <label>PAN</label>
                 <input value={form.pan} onChange={set('pan')} maxLength={10} placeholder="Optional — avoids 5% TDS" />
               </div>
@@ -188,6 +235,14 @@ export default function Vendors() {
               <div className="field">
                 <label>Opening Balance</label>
                 <input value={form.opening_balance} onChange={set('opening_balance')} type="number" step="0.01" />
+              </div>
+              <div className="field">
+                <label>TDS Rate %</label>
+                <input value={form.tds_rate} onChange={set('tds_rate')} type="number" step="0.01" min="0" placeholder="Blank = company default" />
+              </div>
+              <div className="field">
+                <label>TDS Threshold ₹</label>
+                <input value={form.tds_threshold} onChange={set('tds_threshold')} type="number" step="1" min="0" placeholder="Blank = company default" />
               </div>
               <div className="field">
                 <label>
@@ -232,7 +287,11 @@ export default function Vendors() {
                   <td className="nowrap">{v.vendor_code || '—'}</td>
                   <td>{v.name}</td>
                   <td>{v.company_name || '—'}</td>
-                  <td className="nowrap">{v.gstin || '—'}</td>
+                  <td className="nowrap">
+                    {v.gstin || '—'}
+                    {v.gstin && <br />}
+                    {catBadge(v)}
+                  </td>
                   <td className="nowrap">{v.pan || '—'}</td>
                   <td className="nowrap">{v.phone || '—'}</td>
                   <td>{v.city || '—'}</td>

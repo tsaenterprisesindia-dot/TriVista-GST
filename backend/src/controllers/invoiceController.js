@@ -45,17 +45,21 @@ async function createInvoiceCore(conn, user, b) {
   if (!custRows.length) throw Object.assign(new Error('Customer not found.'), { status: 404 });
   const customer = custRows[0];
 
-  // Document type: Tax Invoice B2B/B2C (default by customer GSTIN), or
+  // Document type: Tax Invoice B2B/B2C (default from party registration category), or
   // CREDIT_NOTE / DEBIT_NOTE / EXPORT / NIL (exempt)
   const DOC_TYPES = ['B2B', 'B2C', 'CREDIT_NOTE', 'DEBIT_NOTE', 'EXPORT', 'NIL'];
   const requestedType = String(b.invoice_type || '').toUpperCase();
+  const regCategory = customer.registration_category || (customer.gstin ? 'registered' : 'unregistered');
+  const defaultType = regCategory === 'export' ? 'EXPORT' : regCategory === 'unregistered' ? 'B2C' : 'B2B';
   const invoiceType = DOC_TYPES.includes(requestedType)
     ? requestedType
-    : customer.gstin ? 'B2B' : 'B2C';
+    : defaultType;
   const isCreditDoc = invoiceType === 'CREDIT_NOTE' || invoiceType === 'DEBIT_NOTE';
   const isNilDoc = invoiceType === 'NIL';
   const isExportDoc = invoiceType === 'EXPORT';
   const sign = isCreditDoc ? -1 : 1;
+  // Tax-exempt party: nil-rated supply keeps its taxable value but carries no GST.
+  const isExempt = customer.tax_exempt && !isExportDoc;
 
   // Atomically allocate next invoice number (gap-less per FY, per branch)
   const invoiceNumber = await allocateInvoiceNumber(conn, branch, invDate);
@@ -79,7 +83,7 @@ async function createInvoiceCore(conn, user, b) {
       gstRate = 0;
       taxableValue = 0;
     }
-    const tax = isNilDoc || isExportDoc
+    const tax = isNilDoc || isExportDoc || isExempt
       ? { cgst: 0, sgst: 0, igst: 0, cess: 0 }
       : splitGst(taxableValue, gstRate, placeOfSupply, companyState);
     const lineTotal = (taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess) * sign;

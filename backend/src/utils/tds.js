@@ -23,13 +23,14 @@ async function computeTcs(pool, customerId, invoiceDate, thisTaxable, excludeInv
     [customerId, from, to, excludeInvoiceId || 0]
   );
   const prev = Number(rows[0].v) || 0;
-  const threshold = Number(settings.tcs_threshold) || 0;
+  const [custRows] = await pool.query('SELECT pan, tcs_rate, tcs_threshold FROM customers WHERE id=?', [customerId]);
+  const cust = custRows[0] || {};
+  const threshold = cust.tcs_threshold != null ? Number(cust.tcs_threshold) : (Number(settings.tcs_threshold) || 0);
   const excess = Math.max(0, prev + thisTaxable - threshold);
   const applicable = Math.min(thisTaxable, excess);
   if (applicable <= 0) return 0;
-  let rate = Number(settings.tcs_rate) || 0.1;
-  const [panRows] = await pool.query('SELECT pan FROM customers WHERE id=?', [customerId]);
-  if (!panRows.length || !panRows[0].pan) rate = 1.0; // 206CC: higher rate when PAN absent
+  let rate = cust.tcs_rate != null ? Number(cust.tcs_rate) : (Number(settings.tcs_rate) || 0.1);
+  if (!cust.pan) rate = 1.0; // 206CC: higher rate when PAN absent
   return round2((applicable * rate) / 100);
 }
 
@@ -46,13 +47,14 @@ async function computeTds(pool, vendorId, billDate, thisTaxable, excludeBillId, 
     [vendorId, from, to, excludeBillId || 0]
   );
   const prev = Number(rows[0].v) || 0;
-  const threshold = Number(settings.tds_threshold) || 0;
+  const [vendRows] = await pool.query('SELECT pan, tds_rate, tds_threshold FROM vendors WHERE id=?', [vendorId]);
+  const vend = vendRows[0] || {};
+  const threshold = vend.tds_threshold != null ? Number(vend.tds_threshold) : (Number(settings.tds_threshold) || 0);
   const excess = Math.max(0, prev + thisTaxable - threshold);
   const applicable = Math.min(thisTaxable, excess);
   if (applicable <= 0) return 0;
-  let rate = Number(settings.tds_rate) || 0.1;
-  const [panRows] = await pool.query('SELECT pan FROM vendors WHERE id=?', [vendorId]);
-  if (!panRows[0].pan) rate = 5.0; // 206AA: higher of rate-in-force or 5% when PAN absent
+  let rate = vend.tds_rate != null ? Number(vend.tds_rate) : (Number(settings.tds_rate) || 0.1);
+  if (!vend.pan) rate = 5.0; // 206AA: higher of rate-in-force or 5% when PAN absent
   return round2((applicable * rate) / 100);
 }
 

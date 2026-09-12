@@ -30,8 +30,11 @@ async function createPurchase(req, res, next) {
 
     const placeOfSupply = b.place_of_supply || vendor.state_code || companyState;
     const isInterstate = String(placeOfSupply) !== String(companyState);
-    // Reverse Charge (RCM): purchases from unregistered dealers. Auto-enabled when vendor has no GSTIN.
-    const isRcm = Number(b.is_rcm) === 1 || !vendor.gstin;
+    // Reverse Charge (RCM): auto on for unregistered vendors, or when the vendor
+// master marks rcm_default (e.g. certain notified services). Explicit body flag wins.
+    const isRcm = b.is_rcm !== undefined
+      ? Number(b.is_rcm) === 1
+      : Number(vendor.rcm_default) === 1 || !vendor.gstin;
 
     const [mx] = await conn.query('SELECT COALESCE(MAX(id),0) AS mx FROM purchase_bills');
     // For GSTR-2A matching "supplier invoice no" matters, not our series.
