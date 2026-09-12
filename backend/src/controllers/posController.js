@@ -3,6 +3,7 @@ const { splitGst, round2 } = require('../utils/gst');
 const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
 const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
+const ledger = require('../utils/ledger');
 
 /**
  * Sell from POS: creates a paid invoice, deducts stock, returns invoice details.
@@ -135,11 +136,32 @@ async function posSale(req, res, next) {
       );
     }
 
-    await conn.query(
+    const [payIns] = await conn.query(
       `INSERT INTO payments (invoice_id,customer_id,date,amount,mode,note,created_by)
        VALUES (?,?,?,?,?,?,?)`,
       [invoiceId, customer.id, new Date().toISOString().slice(0, 10), grandTotal, b.payment_mode || 'CASH', 'POS full payment', req.user.id]
     );
+
+    // Post double-entry ledgers (idempotent by voucher number)
+    await ledger.postSale(conn, {
+      id: invoiceId,
+      invoice_number: invoiceNumber,
+      invoice_date: new Date().toISOString().slice(0, 10),
+      customer_name: customer.name,
+      grand_total: grandTotal,
+      subtotal: round2(subtotal),
+      cgst_total: round2(cgstTotal),
+      sgst_total: round2(sgstTotal),
+      igst_total: round2(igstTotal),
+    }, req.user.id);
+    await ledger.postSalePayment(conn, {
+      invoice: { invoice_number: invoiceNumber },
+      amount: grandTotal,
+      date: new Date().toISOString().slice(0, 10),
+      mode: b.payment_mode || 'CASH',
+      payment_id: payIns.insertId,
+      created_by: req.user.id,
+    });
 
     await conn.commit();
     await audit(req, 'CREATE', 'invoice', invoiceId, { invoice_number: invoiceNumber, customer_id: customer.id, source: 'POS', grand_total: grandTotal });

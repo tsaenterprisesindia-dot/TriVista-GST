@@ -3,6 +3,7 @@ const { splitGst, round2 } = require('../utils/gst');
 const { pad } = require('../utils/helpers');
 const { computeTds } = require('../utils/tds');
 const { audit } = require('../utils/audit');
+const ledger = require('../utils/ledger');
 
 /**
  * Create a Purchase Bill (inward supply). Increases stock, records GST input.
@@ -123,19 +124,46 @@ async function createPurchase(req, res, next) {
 
     // Payment if included
     let paidAmount = 0;
+    let paymentId = null;
     const payAmount = Number(b.paid_amount) || 0;
+    const billDate = b.bill_date || new Date().toISOString().slice(0, 10);
     if (payAmount > 0) {
       paidAmount = Math.min(payAmount, grandTotal);
-      await conn.query(
-        `INSERT INTO payments (date,amount,mode,reference_no,note,created_by) VALUES (?,?,?,?,?,?)`,
-        [b.bill_date, paidAmount, b.payment_mode || 'BANK', null, `Payment for ${billNumber}`, req.user.id]
+      const [payIns] = await conn.query(
+        `INSERT INTO payments (date,amount,mode,reference_no,note,created_by,bill_id) VALUES (?,?,?,?,?,?,?)`,
+        [billDate, paidAmount, b.payment_mode || 'BANK', null, `Payment for ${billNumber}`, req.user.id, billId]
       );
+      paymentId = payIns.insertId;
     }
     const status = paidAmount >= grandTotal ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'PENDING';
     await conn.query(
       'UPDATE purchase_bills SET paid_amount=?, balance_due=?, status=? WHERE id=?',
       [paidAmount, round2(grandTotal - paidAmount), status, billId]
     );
+
+    // Post double-entry ledgers (idempotent by voucher number)
+    await ledger.postPurchase(conn, {
+      id: billId,
+      bill_number: billNumber,
+      bill_date: billDate,
+      vendor_name: vendor.name,
+      subtotal: round2(subtotal),
+      cgst_total: round2(cgstTotal),
+      sgst_total: round2(sgstTotal),
+      igst_total: round2(igstTotal),
+      grand_total: round2(grandTotal),
+      is_rcm: isRcm ? 1 : 0,
+    }, req.user.id);
+    if (paymentId) {
+      await ledger.postPurchasePayment(conn, {
+        bill: { bill_number: billNumber },
+        amount: paidAmount,
+        date: billDate,
+        mode: b.payment_mode || 'BANK',
+        payment_id: paymentId,
+        created_by: req.user.id,
+      });
+    }
 
     await conn.commit();
     await audit(req, 'CREATE', 'purchase_bill', billId, { bill_number: billNumber, vendor_id: vendor.id, grand_total: round2(grandTotal), tds_amount: tdsAmount });
@@ -193,14 +221,24 @@ async function payPurchase(req, res, next) {
     if (!rows.length) return res.status(404).json({ error: 'Purchase bill not found.' });
     const bill = rows[0];
     const pay = Math.min(Number(amount), Number(bill.balance_due));
-    await pool.query(
-      `INSERT INTO payments (date,amount,mode,note,created_by) VALUES (?,?,?,?,?)`,
-      [date || new Date().toISOString().slice(0, 10), pay, mode || 'BANK', `Payment for ${bill.bill_number}`, req.user.id]
+    const payDate = date || new Date().toISOString().slice(0, 10);
+    const payMode = mode || 'BANK';
+    const [payIns] = await pool.query(
+      `INSERT INTO payments (date,amount,mode,note,created_by,bill_id) VALUES (?,?,?,?,?,?)`,
+      [payDate, pay, payMode, `Payment for ${bill.bill_number}`, req.user.id, id]
     );
     const newPaid = round2(Number(bill.paid_amount) + pay);
     const balance = round2(Number(bill.grand_total) - newPaid);
     const status = balance === 0 ? 'PAID' : 'PARTIAL';
     await pool.query('UPDATE purchase_bills SET paid_amount=?, balance_due=?, status=? WHERE id=?', [newPaid, balance, status, id]);
+    await ledger.postPurchasePayment(pool, {
+      bill: { bill_number: bill.bill_number },
+      amount: pay,
+      date: payDate,
+      mode: payMode,
+      payment_id: payIns.insertId,
+      created_by: req.user.id,
+    });
     await audit(req, 'PAY', 'payment', id, { amount: pay, mode: mode || 'BANK', bill_number: bill.bill_number });
     res.json({ message: 'Payment recorded.', balance_due: balance });
   } catch (e) {
@@ -213,35 +251,27 @@ async function profitLoss(req, res, next) {
   try {
     const { from, to } = req.query;
     const pool = getPool();
-    const where = 'date BETWEEN ? AND ?';
-    const params = [from, to];
-    const [rows] = await pool.query(
-      `SELECT a.code,a.name,a.type,
-              IFNULL(SUM(tx.debit),0) AS d,
-              IFNULL(SUM(tx.credit),0) AS c
-       FROM transactions tx JOIN accounts a ON a.id=tx.account_id
-       WHERE ${where} GROUP BY a.code,a.name,a.type ORDER BY a.code`, params
-    );
-    let income = 0, expense = 0;
-    for (const r of rows) {
-      if (r.type === 'INCOME') income += Number(r.c) - Number(r.d);
-      else if (r.type === 'EXPENSE') expense += Number(r.d) - Number(r.c);
-    }
-    // Also add direct sales from invoices if no journal entries exist
+    const rep = await ledger.pnlReport(pool, from, to);
+
+    // Fallback for pre-ledger data: straight from the invoices
     const [invTotals] = await pool.query(
       `SELECT IFNULL(SUM(subtotal),0) AS sales, IFNULL(SUM(tax_total),0) AS tax_collected
-       FROM invoices WHERE invoice_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED')`, params
+       FROM invoices WHERE invoice_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED')`, [from || '1900-01-01', to || '9999-12-31']
     );
-    if (rows.every((r) => Number(r.d) + Number(r.c) === 0)) {
-      income = Number(invTotals[0].sales);
-    }
+
+    const rows = rep.items.map((r) => ({ ...r, opening_balance: 0 }));
+    const invoiceSales = invTotals[0].sales;
+    const invoiceTax = invTotals[0].tax_collected;
+    const source = rep.hasPostings ? 'ledger' : 'documents';
+
     res.json({
-      income,
-      expense,
-      profit: round2(income - expense),
+      source,
+      income: rep.hasPostings ? rep.income : Number(invoiceSales),
+      expense: rep.hasPostings ? rep.expense : 0,
+      profit: rep.hasPostings ? rep.profit : round2(Number(invoiceSales)),
       rows,
-      invoiceSales: invTotals[0].sales,
-      invoiceTax: invTotals[0].tax_collected,
+      invoiceSales,
+      invoiceTax,
     });
   } catch (e) {
     next(e);
@@ -251,13 +281,11 @@ async function profitLoss(req, res, next) {
 // ---------------- Balance Sheet ----------------
 async function balanceSheet(req, res, next) {
   try {
+    const { from, to } = req.query;
     const pool = getPool();
-    const [accounts] = await pool.query(
-      `SELECT a.*, IFNULL(SUM(tx.debit),0)-IFNULL(SUM(tx.credit),0) AS balance
-       FROM accounts a LEFT JOIN transactions tx ON tx.account_id=a.id
-       GROUP BY a.id,a.code,a.name,a.type,a.parent_id,a.opening_balance,a.is_active,a.created_at
-       ORDER BY a.code`
-    );
+    const asOf = to || new Date().toISOString().slice(0, 10);
+    const rep = await ledger.balanceSheetReport(pool, asOf);
+
     const [invVal] = await pool.query(
       `SELECT IFNULL(SUM(q.qty * p.purchase_price),0) AS value FROM
        (SELECT sm.product_id, SUM(CASE WHEN sm.type='IN' THEN sm.quantity WHEN sm.type='OUT' THEN -sm.quantity ELSE sm.quantity END) AS qty
@@ -270,18 +298,41 @@ async function balanceSheet(req, res, next) {
     const [payable] = await pool.query(
       `SELECT IFNULL(SUM(balance_due),0) AS val FROM purchase_bills WHERE status IN ('PENDING','PARTIAL')`
     );
-    // Compiled position
-    const totalAssets = Number(invVal[0].value) + Number(receivable[0].val);
-    const totalLiabilities = Number(payable[0].val);
 
-    // aggregate by type
+    const hasLedger = rep.items.some((i) => Math.abs(i.balance) > 0.005);
     const byType = {};
-    for (const a of accounts) {
-      const t = a.type;
-      byType[t] = byType[t] || 0;
-      byType[t] += Number(a.opening_balance) + Number(a.balance);
+    const accounts = rep.items.map((a) => {
+      const balance = hasLedger ? a.balance : 0;
+      byType[a.type] = (byType[a.type] || 0) + balance;
+      return { ...a, balance };
+    });
+
+    // Compiled position
+    const totalLiabilities = Number(payable[0].val);
+    const receivables = Number(receivable[0].val);
+    const inventoryValue = Number(invVal[0].value);
+
+    if (!hasLedger) {
+      // Pre-ledger: document-based position (unchanged legacy behaviour)
+      byType.ASSET = round2(inventoryValue + receivables);
+      byType.LIABILITY = round2(totalLiabilities);
     }
-    res.json({ accounts, byType, inventoryValue: invVal[0].value, receivables: receivable[0].val, payables: payable[0].val, totalAssets, totalLiabilities });
+
+    const totalAssets = hasLedger
+      ? round2((byType.ASSET || 0) + inventoryValue)
+      : round2(inventoryValue + receivables);
+
+    res.json({
+      source: hasLedger ? 'ledger' : 'documents',
+      asOf: hasLedger ? asOf : null,
+      accounts,
+      byType,
+      inventoryValue,
+      receivables,
+      payables: totalLiabilities,
+      totalAssets,
+      totalLiabilities,
+    });
   } catch (e) {
     next(e);
   }

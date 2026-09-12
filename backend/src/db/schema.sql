@@ -28,6 +28,7 @@ DROP TABLE IF EXISTS `hsn_sac_codes`;
 DROP TABLE IF EXISTS `customers`;
 DROP TABLE IF EXISTS `vendors`;
 DROP TABLE IF EXISTS `accounts`;
+DROP TABLE IF EXISTS `journal_entries`;
 DROP TABLE IF EXISTS `transactions`;
 DROP TABLE IF EXISTS `company_settings`;
 DROP TABLE IF EXISTS `users`;
@@ -286,10 +287,32 @@ CREATE TABLE `accounts` (
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
+-- Journal entries (double-entry voucher headers)
+-- ------------------------------------------------------------
+CREATE TABLE `journal_entries` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `voucher_no` VARCHAR(60) NOT NULL,
+  `voucher_date` DATE NOT NULL,
+  `narration` VARCHAR(255) DEFAULT NULL,
+  `source` ENUM('JOURNAL','INVOICE','PURCHASE','PAYMENT','REVERSAL','OPENING') NOT NULL DEFAULT 'JOURNAL',
+  `ref_type` VARCHAR(40) DEFAULT NULL,
+  `ref_id` INT UNSIGNED DEFAULT NULL,
+  `status` ENUM('POSTED','VOID') NOT NULL DEFAULT 'POSTED',
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_voucher_no` (`voucher_no`),
+  KEY `idx_je_date` (`voucher_date`),
+  KEY `idx_je_ref` (`ref_type`, `ref_id`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
 -- General ledger transactions
 -- ------------------------------------------------------------
 CREATE TABLE `transactions` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `journal_id` INT UNSIGNED DEFAULT NULL,
+  `voucher_no` VARCHAR(60) DEFAULT NULL,
   `account_id` INT UNSIGNED NOT NULL,
   `date` DATE NOT NULL,
   `debit` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
@@ -301,7 +324,10 @@ CREATE TABLE `transactions` (
   PRIMARY KEY (`id`),
   KEY `idx_txn_account` (`account_id`),
   KEY `idx_txn_date` (`date`),
-  CONSTRAINT `fk_txn_account` FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`)
+  KEY `idx_txn_journal` (`journal_id`),
+  KEY `idx_txn_voucher` (`voucher_no`),
+  CONSTRAINT `fk_txn_account` FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`),
+  CONSTRAINT `fk_txn_journal` FOREIGN KEY (`journal_id`) REFERENCES `journal_entries`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
@@ -376,6 +402,7 @@ CREATE TABLE `invoice_items` (
 CREATE TABLE `payments` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `invoice_id` INT UNSIGNED DEFAULT NULL,
+  `bill_id` INT UNSIGNED DEFAULT NULL,
   `customer_id` INT UNSIGNED DEFAULT NULL,
   `date` DATE NOT NULL,
   `amount` DECIMAL(14,2) NOT NULL,
@@ -386,8 +413,10 @@ CREATE TABLE `payments` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_pay_invoice` (`invoice_id`),
+  KEY `idx_pay_bill` (`bill_id`),
   KEY `idx_pay_customer` (`customer_id`),
-  CONSTRAINT `fk_pay_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices`(`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_pay_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices`(`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pay_bill` FOREIGN KEY (`bill_id`) REFERENCES `purchase_bills`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
@@ -765,4 +794,8 @@ INSERT INTO `accounts` (`code`,`name`,`type`) VALUES
   ('5200','Discounts Given','EXPENSE'),
   ('5300','Sales Return','EXPENSE'),
   ('5400','Bank Charges','EXPENSE'),
-  ('5500','Sundry Expenses','EXPENSE');
+  ('5500','Sundry Expenses','EXPENSE'),
+  ('2600','Input CGST Credit','ASSET'),
+  ('2700','Input SGST Credit','ASSET'),
+  ('2800','Input IGST Credit','ASSET'),
+  ('5600','Round Off','EXPENSE');

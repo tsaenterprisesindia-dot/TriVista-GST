@@ -104,6 +104,25 @@ Existing migrations (order as defined in mig-all.js):
 | `mig-licensing.js` | licensing tables + `license_plans` seed |
 | `mig-licensing-invoice.js` | `client_licenses.invoice_id` |
 | `mig-terms-acceptance.js` | `users.accepted_terms_at` (T&C gate) |
+| `mig-06-ledger.js` | Double-entry general ledger: `journal_entries` table, `transactions.journal_id/voucher_no`, `payments.bill_id`, input-GST + round-off accounts, balanced backfill of existing invoices/payments/purchase bills |
+
+### Double-entry ledger module
+Accounting now maintains a real, balanced general ledger (vouchers in
+`journal_entries`, legs in `transactions`). Every invoice, sale payment, purchase
+bill and purchase payment is automatically posted; cancelling an invoice posts
+mirror (reversal) vouchers. Manual journal vouchers are supported.
+
+- Endpoints: `GET/POST/PUT/DELETE /api/accounts`, `GET /api/accounts/ledger`,
+  `GET /api/accounts/trial-balance`, `GET /api/accounts/cash-bank`,
+  `GET/POST/DELETE /api/accounts/journal`.
+- **Profit & Loss** and **Balance Sheet** read the ledger and fall back to the old
+  document-based numbers only when nothing has been posted yet.
+- Vouchers are idempotent (unique `voucher_no`) - re-running a backfill or a
+  migration never double-posts.
+- Posting convention: `ASSET/EXPENSE` debit-positive, `LIABILITY/INCOME/EQUITY`
+  credit-positive. Round-off adjustments land on account `5600 Round Off`.
+- The **Chart of Accounts** is managed under Accounting - Chart of Accounts.
+  Opening balances are locked once an account has ledger postings.
 
 ---
 

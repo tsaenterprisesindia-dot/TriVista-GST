@@ -26,6 +26,7 @@ const ORDER = [
   'mig-licensing.js',
   'mig-licensing-invoice.js',
   'mig-terms-acceptance.js',
+  'mig-06-ledger.js',
 ];
 
 const DB = {

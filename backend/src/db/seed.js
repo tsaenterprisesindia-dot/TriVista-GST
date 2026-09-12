@@ -224,6 +224,10 @@ async function seed() {
         ['5300','Sales Return','EXPENSE'],
         ['5400','Bank Charges','EXPENSE'],
         ['5500','Sundry Expenses','EXPENSE'],
+        ['2600','Input CGST Credit','ASSET'],
+        ['2700','Input SGST Credit','ASSET'],
+        ['2800','Input IGST Credit','ASSET'],
+        ['5600','Round Off','EXPENSE'],
       ];
       for (const a of accts) {
         await conn.query('INSERT INTO accounts (code,name,type) VALUES (?,?,?)', a);

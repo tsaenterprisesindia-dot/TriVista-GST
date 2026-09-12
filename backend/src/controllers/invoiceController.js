@@ -4,6 +4,7 @@ const { localDateStr } = require('../utils/helpers');
 const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
 const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
+const ledger = require('../utils/ledger');
 
 /**
  * Create a GST invoice with full tax computation.
@@ -201,15 +202,17 @@ async function createInvoiceCore(conn, user, b) {
 
   // Paid amount (if payment_mode != CREDIT and amount given)
   let paidAmount = 0;
+  let paymentId = null;
   const payAmount = Number(b.paid_amount) || 0;
   if (payAmount > 0) {
     paidAmount = Math.min(payAmount, grandTotal);
-    await conn.query(
+    const [payIns] = await conn.query(
       `INSERT INTO payments (invoice_id,customer_id,date,amount,mode,reference_no,note,created_by)
        VALUES (?,?,?,?,?,?,?,?)`,
       [invoiceId, customer.id, b.invoice_date || new Date().toISOString().slice(0, 10), paidAmount,
        b.payment_mode === 'CREDIT' ? 'OTHER' : b.payment_mode, b.reference_no || null, 'Payment on invoice', user.id]
     );
+    paymentId = payIns.insertId;
   }
   const status = paidAmount >= grandTotal ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'PENDING';
   const balance = round2(grandTotal - paidAmount);
@@ -217,6 +220,29 @@ async function createInvoiceCore(conn, user, b) {
     'UPDATE invoices SET paid_amount=?, balance_due=?, status=? WHERE id=?',
     [paidAmount, balance, status, invoiceId]
   );
+
+  // Post double-entry ledgers (idempotent by voucher number)
+  await ledger.postSale(conn, {
+    id: invoiceId,
+    invoice_number: invoiceNumber,
+    invoice_date: invDate,
+    customer_name: customer.name,
+    grand_total: grandTotal,
+    subtotal: round2(subtotal),
+    cgst_total: round2(cgstTotal),
+    sgst_total: round2(sgstTotal),
+    igst_total: round2(igstTotal),
+  }, user.id);
+  if (paymentId) {
+    await ledger.postSalePayment(conn, {
+      invoice: { invoice_number: invoiceNumber },
+      amount: paidAmount,
+      date: b.invoice_date || localDateStr(),
+      mode: b.payment_mode === 'CREDIT' ? 'OTHER' : b.payment_mode || 'CASH',
+      payment_id: paymentId,
+      created_by: user.id,
+    });
+  }
 
   return {
     customer_id: customer.id,
@@ -316,18 +342,27 @@ async function addPayment(req, res, next) {
     const pay = Math.min(Number(amount), pending);
     pending = round2(pending - pay);
 
-    await conn.query(
+    const [payIns] = await conn.query(
       `INSERT INTO payments (invoice_id,customer_id,date,amount,mode,reference_no,note,created_by)
        VALUES (?,?,?,?,?,?,?,?)`,
       [invoice.id, invoice.customer_id, date || localDateStr(), pay,
        mode || 'CASH', reference_no || null, note || null, req.user.id]
     );
+    const paymentId = payIns.insertId;
     const newPaid = round2(Number(invoice.paid_amount) + pay);
     const status = pending === 0 ? 'PAID' : 'PARTIAL';
     await conn.query(
       'UPDATE invoices SET paid_amount=?, balance_due=?, status=? WHERE id=?',
       [newPaid, pending, status, invoice.id]
     );
+    await ledger.postSalePayment(conn, {
+      invoice: { invoice_number: invoice.invoice_number },
+      amount: pay,
+      date: date || localDateStr(),
+      mode: mode || 'CASH',
+      payment_id: paymentId,
+      created_by: req.user.id,
+    });
     await refreshCustomerBalance(conn, invoice.customer_id);
     await conn.commit();
     await audit(req, 'PAY', 'payment', invoiceId, { amount: pay, mode: mode || 'CASH', invoice_number: invoice.invoice_number });
@@ -418,6 +453,25 @@ async function cancel(req, res, next) {
       "UPDATE invoices SET status='CANCELLED', balance_due=0, notes=? WHERE id=?",
       [notes, invoiceId]
     );
+
+    // Reverse the sale ledger and any payment vouchers (mirror entries)
+    const reversalDate = localDateStr();
+    await ledger.postReversal(conn, {
+      voucher_no: `INV-${invoice.invoice_number}`,
+      date: reversalDate,
+      narration: `Cancelled invoice ${invoice.invoice_number}`,
+      created_by: req.user.id,
+    });
+    const [invPayments] = await conn.query('SELECT id FROM payments WHERE invoice_id=?', [invoiceId]);
+    for (const p of invPayments) {
+      await ledger.postReversal(conn, {
+        voucher_no: `P-INV-${p.id}`,
+        date: reversalDate,
+        narration: `Refund reversal on cancelled invoice ${invoice.invoice_number}`,
+        created_by: req.user.id,
+      });
+    }
+
     await refreshCustomerBalance(conn, invoice.customer_id);
     await conn.commit();
     await audit(req, 'CANCEL', 'invoice', invoiceId, {
