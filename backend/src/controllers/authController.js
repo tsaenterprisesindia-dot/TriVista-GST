@@ -5,9 +5,10 @@ const { getPool } = require('../db');
 const { isValidGstin } = require('../utils/gst');
 const { pad } = require('../utils/helpers');
 const { audit } = require('../utils/audit');
+const { getJwtSecret } = require('../utils/secret');
 
 dotenv.config();
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = getJwtSecret();
 
 // Login lockout: 5 consecutive failures per email+IP -> 15 minutes.
 const LOGIN_MAX_ATTEMPTS = 5;

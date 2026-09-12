@@ -1,9 +1,10 @@
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
+const { getJwtSecret } = require('../utils/secret');
 
 dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
+const JWT_SECRET = getJwtSecret();
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '12h';
 
 /**
