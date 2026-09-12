@@ -25,7 +25,7 @@ async function updateSettings(req, res, next) {
       return res.status(400).json({ error: 'Invalid GSTIN format.' });
     }
     const allowed = [
-      'company_name','gstin','pan','tan','address_line1','address_line2','city','state','state_code',
+      'company_name','legal_name','trade_name','constitution','gstin','pan','tan','address_line1','address_line2','city','state','state_code',
       'pincode','phone','email','website','logo_path','invoice_prefix','invoice_start_number',
       'invoice_footer_note','bank_name','bank_account_no','bank_ifsc','upi_id','upi_beneficiary','gst_tax_preference','round_off',
       'business_type',

@@ -106,8 +106,8 @@ async function buildEinvoicePayload(invoiceId) {
     },
     SellerDtls: {
       Gstin: company.gstin || '',
-      LglNm: company.company_name || '',
-      TrdNm: company.company_name || '',
+      LglNm: company.legal_name || company.company_name || '',
+      TrdNm: company.trade_name || company.company_name || '',
       Addr1: company.address_line1 || '',
       Addr2: company.address_line2 || '',
       Loc: company.city || sellerState,

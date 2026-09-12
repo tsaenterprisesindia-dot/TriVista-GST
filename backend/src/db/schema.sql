@@ -64,6 +64,9 @@ CREATE TABLE `users` (
 CREATE TABLE `company_settings` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `company_name` VARCHAR(190) NOT NULL,
+  `legal_name` VARCHAR(190) DEFAULT NULL,
+  `trade_name` VARCHAR(190) DEFAULT NULL,
+  `constitution` VARCHAR(60) DEFAULT NULL,
   `gstin` VARCHAR(15) DEFAULT NULL,
   `pan` VARCHAR(10) DEFAULT NULL,
   `tan` VARCHAR(10) DEFAULT NULL,
@@ -87,6 +90,7 @@ CREATE TABLE `company_settings` (
   `upi_beneficiary` VARCHAR(190) DEFAULT NULL,
   `gst_tax_preference` ENUM('exclusive','inclusive') NOT NULL DEFAULT 'exclusive',
   `round_off` TINYINT(1) NOT NULL DEFAULT 1,
+  `active_branch_id` INT UNSIGNED DEFAULT NULL,
   `business_type` ENUM('retail','wholesale','services','mixed') NOT NULL DEFAULT 'mixed',
   `e_invoice_enabled` TINYINT(1) NOT NULL DEFAULT 0,
   `aggregate_turnover_crores` DECIMAL(6,2) NOT NULL DEFAULT 0.00,
@@ -127,12 +131,13 @@ CREATE TABLE IF NOT EXISTS `payment_links` (
 -- Per-financial-year invoice series (Rule 46 fresh series per FY)
 -- ------------------------------------------------------------
 CREATE TABLE `invoice_series` (
+  `branch_id` INT UNSIGNED NOT NULL,
   `fy` VARCHAR(6) NOT NULL,
   `series_type` VARCHAR(20) NOT NULL DEFAULT 'SALES',
   `last_number` INT UNSIGNED NOT NULL DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`fy`,`series_type`)
+  PRIMARY KEY (`branch_id`,`fy`,`series_type`)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
@@ -439,6 +444,7 @@ CREATE TABLE `branches` (
   `phone` VARCHAR(20) DEFAULT NULL,
   `email` VARCHAR(190) DEFAULT NULL,
   `invoice_prefix` VARCHAR(20) NOT NULL DEFAULT 'INV',
+  `invoice_start_number` INT UNSIGNED NOT NULL DEFAULT 0,
   `is_head_office` TINYINT(1) NOT NULL DEFAULT 0,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

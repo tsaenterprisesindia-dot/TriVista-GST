@@ -16,11 +16,14 @@ async function seed() {
     if (companyRows.length === 0) {
       await conn.query(
         `INSERT INTO company_settings
-         (company_name, gstin, pan, tan, address_line1, city, state, state_code, pincode, phone, email, website,
+         (company_name, legal_name, trade_name, constitution, gstin, pan, tan, address_line1, city, state, state_code, pincode, phone, email, website,
           invoice_prefix, invoice_start_number, invoice_footer_note, gst_tax_preference, round_off)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           process.env.DEFAULT_COMPANY_NAME || 'TriVista Traders',
+          process.env.DEFAULT_COMPANY_NAME || 'TriVista Traders',
+          null,
+          null,
           process.env.DEFAULT_GSTIN || '29ABCDE1234F1Z5',
           'ABCDE1234F',
           'BANG12345A',
@@ -57,10 +60,11 @@ async function seed() {
     // ---- Default branch (multi-company/multi-branch) ----
     const [branchCount] = await conn.query('SELECT COUNT(*) AS c FROM branches');
     if (branchCount[0].c === 0) {
-      await conn.query(
+      const [br] = await conn.query(
         `INSERT INTO branches (branch_name,company_name,gstin,pan,state_code,invoice_prefix,is_head_office)
          VALUES ('Head Office - TriVista','TriVista Traders','29ABCDE1234F1Z5','ABCDE1234F','29','INV',1)`
       );
+      await conn.query('UPDATE company_settings SET active_branch_id=?', [br.insertId]);
       console.log('Seeded default branch.');
     }
 

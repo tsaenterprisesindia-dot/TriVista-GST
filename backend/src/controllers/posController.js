@@ -1,6 +1,7 @@
 const { getPool } = require('../db');
 const { splitGst, round2 } = require('../utils/gst');
 const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
+const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
@@ -19,9 +20,10 @@ async function posSale(req, res, next) {
     }
     await conn.beginTransaction();
 
+    const branch = await getActiveBranch(conn);
     const [cRows] = await conn.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
     const company = cRows[0] || {};
-    const companyState = company.state_code || '29';
+    const companyState = branch?.state_code || company.state_code || '29';
 
     let customer;
     if (b.customer_id) {
@@ -45,7 +47,7 @@ async function posSale(req, res, next) {
     const placeOfSupply = customer.state_code || companyState;
     const isInterstate = String(placeOfSupply) !== String(companyState);
 
-    const invoiceNumber = await allocateInvoiceNumber(conn, company, new Date().toISOString().slice(0, 10));
+    const invoiceNumber = await allocateInvoiceNumber(conn, branch, new Date().toISOString().slice(0, 10));
 
     let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
 

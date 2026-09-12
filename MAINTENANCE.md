@@ -105,6 +105,18 @@ Existing migrations (order as defined in mig-all.js):
 | `mig-licensing-invoice.js` | `client_licenses.invoice_id` |
 | `mig-terms-acceptance.js` | `users.accepted_terms_at` (T&C gate) |
 | `mig-06-ledger.js` | Double-entry general ledger: `journal_entries` table, `transactions.journal_id/voucher_no`, `payments.bill_id`, input-GST + round-off accounts, balanced backfill of existing invoices/payments/purchase bills |
+| `mig-07-business-master.js` | Business/Enterprise Master: `company_settings.legal_name/trade_name/constitution`; backfills legal_name from company_name |
+| `mig-08-branches.js` | Unit/Branch Management: `branches.invoice_start_number`, `company_settings.active_branch_id`, `invoice_series.branch_id` (per-branch series keyed `branch_id+fy+type`), re-homes existing series to the head office |
+
+### Unit / Branch Management
+Units/branches are managed under Settings - Units / Branches (`/api/branches`). Each unit can carry
+its own name, GSTIN (blank = not separately registered), address, state/state-code and billing series
+(prefix + start number). The **active unit** is stored as `company_settings.active_branch_id`; switching
+units copies the unit's printable profile into `company_settings` (name, GSTIN, PAN, address, state,
+prefix) so every screen that reads the company profile - invoices, POS, e-Invoice seller details, receipts -
+and the per-branch invoice numbering follow the active unit. Invoice numbering is gap-less per
+`(branch_id, fy)` (`invoice_series` PK). Institutional guards: the head office and the last active unit
+cannot be removed, nor can the currently active unit be deactivated while active.
 
 ### Double-entry ledger module
 Accounting now maintains a real, balanced general ledger (vouchers in

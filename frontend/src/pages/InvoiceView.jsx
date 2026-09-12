@@ -116,7 +116,7 @@ export default function InvoiceView() {
       <style>body{font-family:Arial,sans-serif;max-width:520px;margin:24px auto;padding:16px;color:#111}
       .muted{color:#666;font-size:13px}h1{font-size:20px;margin:0}.right{text-align:right}
       .sep{border-top:2px solid #111;margin:12px 0}</style></head><body>
-      <h1>${company.company_name || 'Company'}</h1>
+      <h1>${company.legal_name || company.company_name || 'Company'}</h1>
       <div class="muted">${company.address_line1 || ''} ${company.city || ''} ${company.state || ''} ${company.pincode || ''}</div>
       ${company.gstin ? `<div class="muted">GSTIN: ${company.gstin}</div>` : ''}
       <div class="muted">${company.phone || ''} ${company.email || ''}</div>
@@ -191,7 +191,10 @@ export default function InvoiceView() {
       <div className="card" id="print-area">
         <div className="flex" style={{ justifyContent: 'space-between', borderBottom: '2px solid #111c34', paddingBottom: 12 }}>
           <div>
-            <h2 style={{ color: '#111c34', margin: 0 }}>{company.company_name || 'Company'}</h2>
+            <h2 style={{ color: '#111c34', margin: 0 }}>{company.trade_name || company.legal_name || company.company_name || 'Company'}</h2>
+            {company.legal_name && company.trade_name && company.legal_name !== company.trade_name && (
+              <div className="muted">Legal Name: {company.legal_name}</div>
+            )}
             <div className="muted">{company.address_line1}{company.city ? `, ${company.city}` : ''}</div>
             <div className="muted">{company.state ? `${company.state} ${company.pincode || ''}` : ''}</div>
             <div className="muted">{company.phone ? `Ph: ${company.phone}` : ''} {company.email ? `· ${company.email}` : ''}</div>
@@ -301,7 +304,7 @@ export default function InvoiceView() {
             This is a computer-generated invoice{inv.irn ? ' (IRN registered, e-invoice compliant)' : ''} and is valid without a signature.
           </span>
           <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            <div style={{ fontSize: 11 }}>For {company.company_name || 'Company'}</div>
+            <div style={{ fontSize: 11 }}>For {company.legal_name || company.company_name || 'Company'}</div>
             <div style={{ height: 42 }} />
             <div style={{ borderTop: '1px solid #111', width: 200, marginLeft: 'auto', fontSize: 11 }}>Authorised Signatory</div>
           </span>

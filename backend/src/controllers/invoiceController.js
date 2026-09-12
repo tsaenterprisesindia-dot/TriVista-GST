@@ -2,6 +2,7 @@ const { getPool } = require('../db');
 const { splitGst, round2 } = require('../utils/gst');
 const { localDateStr } = require('../utils/helpers');
 const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
+const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
@@ -26,10 +27,11 @@ async function createInvoiceCore(conn, user, b) {
     throw Object.assign(new Error('At least one item is required.'), { status: 400 });
   }
 
-  // Fetch company settings (state code, invoice numbering)
+  // Active branch drives state code + billing series
+  const branch = await getActiveBranch(conn);
   const [cRows] = await conn.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
   const company = cRows[0] || {};
-  const companyState = company.state_code || '29';
+  const companyState = branch?.state_code || company.state_code || '29';
 
   // Back-dating guard: dates other than today must be explicitly confirmed
   const todayIso = localDateStr();
@@ -55,8 +57,8 @@ async function createInvoiceCore(conn, user, b) {
   const isExportDoc = invoiceType === 'EXPORT';
   const sign = isCreditDoc ? -1 : 1;
 
-  // Atomically allocate next invoice number (gap-less per financial year)
-  const invoiceNumber = await allocateInvoiceNumber(conn, company, invDate);
+  // Atomically allocate next invoice number (gap-less per FY, per branch)
+  const invoiceNumber = await allocateInvoiceNumber(conn, branch, invDate);
 
   const placeOfSupply = b.place_of_supply || customer.state_code || companyState;
   const isInterstate = String(placeOfSupply) !== String(companyState);

@@ -3,6 +3,9 @@ import { api } from '../api/client';
 
 const fields = [
   'company_name',
+  'legal_name',
+  'trade_name',
+  'constitution',
   'gstin',
   'pan',
   'tan',
@@ -52,6 +55,11 @@ export default function CompanySettings() {
   });
   const [intStatus, setIntStatus] = useState(null);
   const [credsMsg, setCredsMsg] = useState('');
+  const [branches, setBranches] = useState([]);
+  const [activeBranchId, setActiveBranchId] = useState(null);
+  const [brForm, setBrForm] = useState({});
+  const [editingBr, setEditingBr] = useState(null);
+  const [brMsg, setBrMsg] = useState('');
 
   useEffect(() => {
     api
@@ -74,6 +82,13 @@ export default function CompanySettings() {
     api
       .get('/integration/status')
       .then(setIntStatus)
+      .catch(() => {});
+    api
+      .get('/branches')
+      .then((d) => {
+        setBranches(d.data || []);
+        setActiveBranchId(d.activeBranchId || null);
+      })
       .catch(() => {});
   }, []);
 
@@ -112,6 +127,95 @@ export default function CompanySettings() {
   };
 
   if (loading) return <div>Loading…</div>;
+
+  const reloadBranches = () =>
+    api.get('/branches').then((d) => {
+      setBranches(d.data || []);
+      setActiveBranchId(d.activeBranchId || null);
+    });
+
+  const refreshCompany = () =>
+    api.get('/company').then((d) => {
+      const f = {};
+      fields.forEach((k) => (f[k] = d[k] ?? ''));
+      setForm(f);
+    });
+
+  const setBr = (k) => (e) =>
+    setBrForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+
+  const saveBranch = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaved('');
+    setBrMsg('');
+    try {
+      const payload = {
+        branch_name: (brForm.branch_name || '').trim(),
+        company_name: brForm.company_name || form.legal_name || form.company_name || '',
+        gstin: (brForm.gstin || '').trim() || null,
+        pan: (brForm.pan || '').trim() || null,
+        address_line1: brForm.address_line1 || null,
+        city: brForm.city || null,
+        state: brForm.state || null,
+        state_code: brForm.state_code || null,
+        pincode: brForm.pincode || null,
+        phone: brForm.phone || null,
+        email: brForm.email || null,
+        invoice_prefix: (brForm.invoice_prefix || 'INV').trim() || 'INV',
+        invoice_start_number: Number(brForm.invoice_start_number || 0),
+      };
+      if (editingBr) {
+        await api.put(`/branches/${editingBr.id}`, payload);
+        setBrMsg('Unit updated.');
+      } else {
+        await api.post('/branches', payload);
+        setBrMsg('Unit added.');
+      }
+      setBrForm({});
+      setEditingBr(null);
+      await reloadBranches();
+      if (editingBr && activeBranchId === editingBr.id) await refreshCompany();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const activateBranch = async (id) => {
+    setError('');
+    setSaved('');
+    try {
+      const r = await api.post(`/branches/${id}/activate`, {});
+      setSaved(r.message);
+      await reloadBranches();
+      await refreshCompany();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const deactivateBranch = async (id) => {
+    setError('');
+    setSaved('');
+    try {
+      const r = await api.delete(`/branches/${id}`);
+      setBrMsg(r.message);
+      await reloadBranches();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const startEdit = (br) => {
+    setError('');
+    const { id, created_at, updated_at, ...rest } = br;
+    setEditingBr(br);
+    setBrForm({ ...rest, invoice_start_number: rest.invoice_start_number || 0 });
+  };
+  const cancelEdit = () => {
+    setEditingBr(null);
+    setBrForm({});
+  };
 
   const clearData = async (e) => {
     e.preventDefault();
@@ -170,11 +274,37 @@ export default function CompanySettings() {
 
       <form onSubmit={submit}>
         <div className="card">
-          <div className="card-title">Business</div>
+          <div className="card-title">Business / Enterprise Master</div>
           <div className="grid-3">
+            <div className="field">
+              <label>Legal Name</label>
+              <input value={form.legal_name} onChange={set('legal_name')} placeholder="Registered company / proprietorship name" />
+            </div>
+            <div className="field">
+              <label>Trade Name</label>
+              <input value={form.trade_name} onChange={set('trade_name')} placeholder="Brand name on invoices (optional)" />
+            </div>
+            <div className="field">
+              <label>Constitution of Business</label>
+              <select value={form.constitution} onChange={set('constitution')}>
+                <option value="">— Select —</option>
+                <option>Sole Proprietorship</option>
+                <option>Partnership</option>
+                <option>LLP</option>
+                <option>Private Limited</option>
+                <option>Public Limited</option>
+                <option>One Person Company</option>
+                <option>HUF</option>
+                <option>Trust / Society</option>
+                <option>Other</option>
+              </select>
+            </div>
             <div className="field">
               <label>Company Name</label>
               <input value={form.company_name} onChange={set('company_name')} />
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Used on printed invoices. Clear Trade Name to print this instead of the brand name.
+              </div>
             </div>
             <div className="field">
               <label>GSTIN</label>
@@ -371,6 +501,123 @@ export default function CompanySettings() {
 
         <button className="btn btn-primary" type="submit">Save Settings</button>
       </form>
+
+      {(() => {
+        const isNew = editingBr === null;
+        return (
+          <div className="card" style={{ marginTop: '16px' }}>
+            <div className="card-title">Units / Branches</div>
+            <p style={{ marginBottom: '10px', fontSize: '13px' }}>
+              Each unit/branch can have its own registered GSTIN, address, state and per-branch billing series.
+              The <strong>active unit</strong> appears on invoices and e-invoice. Switch units freely - printed name,
+              GSTIN, address and invoice numbering follow the active unit.
+            </p>
+            {brMsg && <div className="success-banner">{brMsg}</div>}
+            <div className="table-wrap" style={{ marginBottom: '14px' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Unit / Branch</th>
+                    <th>Type</th>
+                    <th>GSTIN</th>
+                    <th>State</th>
+                    <th>Invoice Prefix</th>
+                    <th>Start No.</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branches.map((br) => (
+                    <tr key={br.id}>
+                      <td>
+                        {br.branch_name}
+                        {br.city ? <div className="muted" style={{ fontSize: 11 }}>{br.address_line1 ? `${br.address_line1}, ` : ''}{br.city}{br.pincode ? ` - ${br.pincode}` : ''}</div> : ''}
+                      </td>
+                      <td>{br.is_head_office ? 'Head Office' : 'Branch'}</td>
+                      <td className="nowrap">{br.gstin || '—'}</td>
+                      <td>{br.state_code || '—'}</td>
+                      <td>{br.invoice_prefix || 'INV'}</td>
+                      <td>{br.invoice_start_number || 0}</td>
+                      <td>
+                        {activeBranchId === br.id ? <span className="badge badge-green">ACTIVE</span> : br.is_active ? <span className="badge badge-gray">Ready</span> : <span className="badge badge-amber">Inactive</span>}
+                      </td>
+                      <td className="nowrap" style={{ textAlign: 'right' }}>
+                        {activeBranchId !== br.id && br.is_active && (
+                          <button className="btn btn-sm" type="button" onClick={() => activateBranch(br.id)}>Set Active</button>
+                        )}{' '}
+                        <button className="btn btn-sm" type="button" onClick={() => (editingBr && editingBr.id === br.id ? cancelEdit() : startEdit(br))}>
+                          {editingBr && editingBr.id === br.id ? 'Cancel Edit' : 'Edit'}
+                        </button>{' '}
+                        {br.is_active && !br.is_head_office && activeBranchId !== br.id && (
+                          <button className="btn btn-sm btn-danger" type="button" onClick={() => deactivateBranch(br.id)}>Deactivate</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {branches.length === 0 && (
+                    <tr><td colSpan={8} className="muted">No units yet - add your first unit below.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <form onSubmit={saveBranch}>
+              <div className="grid-3">
+                <div className="field">
+                  <label>{isNew ? 'Unit / Branch Name *' : 'Unit / Branch Name'}</label>
+                  <input value={brForm.branch_name || ''} onChange={setBr('branch_name')} required={isNew} />
+                </div>
+                <div className="field">
+                  <label>GSTIN (leave blank if not separately registered)</label>
+                  <input value={brForm.gstin || ''} onChange={setBr('gstin')} maxLength={15} />
+                </div>
+                <div className="field">
+                  <label>State / UT</label>
+                  <input value={brForm.state || ''} onChange={setBr('state')} />
+                </div>
+                <div className="field">
+                  <label>State Code</label>
+                  <input value={brForm.state_code || ''} onChange={setBr('state_code')} maxLength={2} />
+                </div>
+                <div className="field">
+                  <label>City / Place of Business</label>
+                  <input value={brForm.city || ''} onChange={setBr('city')} />
+                </div>
+                <div className="field">
+                  <label>Pincode</label>
+                  <input value={brForm.pincode || ''} onChange={setBr('pincode')} />
+                </div>
+                <div className="field">
+                  <label>Address</label>
+                  <input value={brForm.address_line1 || ''} onChange={setBr('address_line1')} />
+                </div>
+                <div className="field">
+                  <label>Phone</label>
+                  <input value={brForm.phone || ''} onChange={setBr('phone')} />
+                </div>
+                <div className="field">
+                  <label>Email</label>
+                  <input value={brForm.email || ''} onChange={setBr('email')} type="email" />
+                </div>
+                <div className="field">
+                  <label>Invoice Prefix</label>
+                  <input value={brForm.invoice_prefix || ''} onChange={setBr('invoice_prefix')} placeholder="e.g. BR1" />
+                </div>
+                <div className="field">
+                  <label>Invoice Start Number</label>
+                  <input value={brForm.invoice_start_number || 0} onChange={setBr('invoice_start_number')} type="number" />
+                </div>
+              </div>
+              <div className="flex" style={{ gap: 12, marginTop: 4 }}>
+                <button className="btn btn-primary" type="submit">{isNew ? 'Add Unit' : 'Save Unit'} </button>
+                {!isNew && (
+                  <button className="btn" type="button" onClick={cancelEdit}>Cancel</button>
+                )}
+              </div>
+            </form>
+          </div>
+        );
+      })()}
 
       <form onSubmit={saveCreds} style={{ marginTop: '16px' }}>
         <div className="card">
