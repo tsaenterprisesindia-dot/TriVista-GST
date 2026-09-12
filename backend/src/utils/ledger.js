@@ -104,6 +104,7 @@ async function postSale(db, invoice, created_by) {
   const salesId = await accountId(db, '4000');
   const gstOutCgst = await accountId(db, '2100');
   const gstOutSgst = await accountId(db, '2200');
+  const gstOutUtgst = await accountId(db, '2400');
   const gstOutIgst = await accountId(db, '2300');
   const roundOffId = await accountId(db, '5600');
 
@@ -114,6 +115,7 @@ async function postSale(db, invoice, created_by) {
   push(salesId, 0, Number(invoice.subtotal) || 0);
   push(gstOutCgst, 0, Number(invoice.cgst_total) || 0);
   push(gstOutSgst, 0, Number(invoice.sgst_total) || 0);
+  push(gstOutUtgst, 0, Number(invoice.utgst_total) || 0);
   push(gstOutIgst, 0, Number(invoice.igst_total) || 0);
 
   const dr = legs.reduce((s, l) => s + (Number(l.debit) || 0), 0);
@@ -160,9 +162,11 @@ async function postPurchase(db, bill, created_by) {
   const credId = await accountId(db, '2000');
   const inCgst = await accountId(db, '2600');
   const inSgst = await accountId(db, '2700');
+  const inUtgst = await accountId(db, '2900');
   const inIgst = await accountId(db, '2800');
   const outCgst = await accountId(db, '2100');
   const outSgst = await accountId(db, '2200');
+  const outUtgst = await accountId(db, '2400');
   const outIgst = await accountId(db, '2300');
   const roundOffId = await accountId(db, '5600');
 
@@ -174,14 +178,17 @@ async function postPurchase(db, bill, created_by) {
     // Reverse charge: GST is our liability, creditor = taxable value only
     push(inCgst, Number(bill.cgst_total) || 0, 0);
     push(inSgst, Number(bill.sgst_total) || 0, 0);
+    push(inUtgst, Number(bill.utgst_total) || 0, 0);
     push(inIgst, Number(bill.igst_total) || 0, 0);
     push(outCgst, 0, Number(bill.cgst_total) || 0);
     push(outSgst, 0, Number(bill.sgst_total) || 0);
+    push(outUtgst, 0, Number(bill.utgst_total) || 0);
     push(outIgst, 0, Number(bill.igst_total) || 0);
     push(credId, 0, Number(bill.subtotal) || 0);
   } else {
     push(inCgst, Number(bill.cgst_total) || 0, 0);
     push(inSgst, Number(bill.sgst_total) || 0, 0);
+    push(inUtgst, Number(bill.utgst_total) || 0, 0);
     push(inIgst, Number(bill.igst_total) || 0, 0);
     push(credId, 0, Number(bill.grand_total) || 0);
   }

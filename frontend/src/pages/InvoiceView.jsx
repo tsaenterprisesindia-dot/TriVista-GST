@@ -31,6 +31,7 @@ export default function InvoiceView() {
 
   const company = inv.company || {};
   const isInterstate = Number(inv.is_interstate) === 1;
+  const isUtInvoice = Number(inv.utgst_total) > 0;
 
   const amountInWords = (n) => {
     if (isNaN(n)) return '';
@@ -222,7 +223,7 @@ export default function InvoiceView() {
           <div style={{ textAlign: 'right' }}>
             <div className="muted" style={{ fontSize: 11 }}>SUMMARY</div>
             <div>Place of Supply: {inv.place_of_supply}</div>
-            <div>Tax: {isInterstate ? 'IGST' : 'CGST + SGST'}</div>
+            <div>Tax: {isInterstate ? 'IGST' : isUtInvoice ? 'CGST + UTGST' : 'CGST + SGST'}</div>
             <div>Due Date: {inv.due_date || '—'}</div>
             <div>Payment Mode: {inv.payment_mode}</div>
           </div>
@@ -254,7 +255,7 @@ export default function InvoiceView() {
                 <td className="right nowrap">{it.discount ? inr(it.discount) : '—'}</td>
                 <td className="right nowrap">{inr(it.taxable_value)}</td>
                 <td className="right">{it.gst_rate}%</td>
-                <td className="right nowrap">{inr(Number(it.cgst_amount) + Number(it.sgst_amount) + Number(it.igst_amount))}</td>
+                <td className="right nowrap">{inr(Number(it.cgst_amount) + Number(it.sgst_amount) + Number(it.utgst_amount) + Number(it.igst_amount))}</td>
                 <td className="right nowrap">{inr(it.total)}</td>
               </tr>
             ))}
@@ -265,7 +266,8 @@ export default function InvoiceView() {
           <TaxBreakupLine label="Subtotal" value={inv.subtotal} />
           <TaxBreakupLine label="Discount" value={-inv.discount} />
           <TaxBreakupLine label="CGST" value={inv.cgst_total} />
-          <TaxBreakupLine label="SGST" value={inv.sgst_total} />
+          {Number(inv.sgst_total) > 0 && <TaxBreakupLine label="SGST" value={inv.sgst_total} />}
+          {Number(inv.utgst_total) > 0 && <TaxBreakupLine label="UTGST" value={inv.utgst_total} />}
           <TaxBreakupLine label="IGST" value={inv.igst_total} />
           <TaxBreakupLine label="Cess" value={inv.cess_total} />
           {Number(inv.tcs_amount) > 0 && <TaxBreakupLine label="TCS (u/s 206C(1H))" value={inv.tcs_amount} />}

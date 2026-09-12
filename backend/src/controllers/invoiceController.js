@@ -67,7 +67,7 @@ async function createInvoiceCore(conn, user, b) {
   const placeOfSupply = b.place_of_supply || customer.state_code || companyState;
   const isInterstate = String(placeOfSupply) !== String(companyState);
 
-  let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
+  let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
   const itemRows = [];
 
   for (const it of b.items) {
@@ -84,17 +84,18 @@ async function createInvoiceCore(conn, user, b) {
       taxableValue = 0;
     }
     const tax = isNilDoc || isExportDoc || isExempt
-      ? { cgst: 0, sgst: 0, igst: 0, cess: 0 }
+      ? { cgst: 0, sgst: 0, utgst: 0, igst: 0, cess: 0 }
       : splitGst(taxableValue, gstRate, placeOfSupply, companyState);
-    const lineTotal = (taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess) * sign;
+    const lineTotal = (taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess) * sign;
 
     subtotal += gross * sign;
     discountTotal += disc * sign;
     cgstTotal += tax.cgst * sign;
     sgstTotal += tax.sgst * sign;
+    utgstTotal += tax.utgst * sign;
     igstTotal += tax.igst * sign;
     cessTotal += tax.cess * sign;
-    taxTotal += (tax.cgst + tax.sgst + tax.igst + tax.cess) * sign;
+    taxTotal += (tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess) * sign;
     grandTotal += lineTotal;
 
     itemRows.push({
@@ -109,6 +110,7 @@ async function createInvoiceCore(conn, user, b) {
       taxable_value: round2(taxableValue * sign),
       cgst_amount: tax.cgst * sign,
       sgst_amount: tax.sgst * sign,
+      utgst_amount: tax.utgst * sign,
       igst_amount: tax.igst * sign,
       cess_amount: tax.cess * sign,
       total: round2(lineTotal),
@@ -159,9 +161,9 @@ async function createInvoiceCore(conn, user, b) {
   const [ins] = await conn.query(
     `INSERT INTO invoices
      (invoice_number,invoice_date,due_date,customer_id,customer_name,customer_gstin,invoice_type,
-      place_of_supply,is_interstate,status,subtotal,discount,cgst_total,sgst_total,igst_total,cess_total,
+      place_of_supply,is_interstate,status,subtotal,discount,cgst_total,sgst_total,utgst_total,igst_total,cess_total,
       tax_total,round_off,grand_total,paid_amount,balance_due,payment_mode,tcs_amount,notes,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       invoiceNumber,
       invDate,
@@ -177,6 +179,7 @@ async function createInvoiceCore(conn, user, b) {
       round2(discountTotal),
       round2(cgstTotal),
       round2(sgstTotal),
+      round2(utgstTotal),
       round2(igstTotal),
       round2(cessTotal),
       round2(taxTotal),
@@ -196,12 +199,12 @@ async function createInvoiceCore(conn, user, b) {
     await conn.query(
       `INSERT INTO invoice_items
        (invoice_id,product_id,item_name,hsn_code,gst_rate,quantity,unit,unit_price,discount,
-        taxable_value,cgst_amount,sgst_amount,igst_amount,cess_amount,total)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        taxable_value,cgst_amount,sgst_amount,utgst_amount,igst_amount,cess_amount,total)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         invoiceId, it.product_id, it.item_name, it.hsn_code, it.gst_rate, it.quantity, it.unit,
         it.unit_price, it.discount, it.taxable_value, it.cgst_amount, it.sgst_amount,
-        it.igst_amount, it.cess_amount, it.total,
+        it.utgst_amount, it.igst_amount, it.cess_amount, it.total,
       ]
     );
   }
@@ -237,6 +240,7 @@ async function createInvoiceCore(conn, user, b) {
     subtotal: round2(subtotal),
     cgst_total: round2(cgstTotal),
     sgst_total: round2(sgstTotal),
+    utgst_total: round2(utgstTotal),
     igst_total: round2(igstTotal),
   }, user.id);
   if (paymentId) {

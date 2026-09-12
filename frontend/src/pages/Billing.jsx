@@ -18,6 +18,8 @@ export default function Billing() {
   const [aiBusy, setAiBusy] = useState(false);
   const [ai, setAi] = useState(null);
   const [wholesale, setWholesale] = useState(false);
+  const [sac, setSac] = useState([]);
+  const [sacSearch, setSacSearch] = useState('');
 
   const [form, setForm] = useState(() => ({
     customer_id: '',
@@ -38,6 +40,7 @@ export default function Billing() {
       setCompany(d);
       if (d.business_type === 'wholesale') setWholesale(true);
     }).catch(() => {});
+    api.get('/hsn?type=SAC').then((d) => setSac(d || [])).catch(() => {});
   }, []);
 
   const customer = customers.find((c) => String(c.id) === String(form.customer_id));
@@ -55,6 +58,28 @@ export default function Billing() {
   const visibleProducts = products.filter(
     (p) => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.sku || '').toLowerCase().includes(search.toLowerCase())
   );
+  const isUt = ['04','26','38'].includes(String(companyState));
+  const visibleSac = sac.filter(
+    (s) => sacSearch && (
+      (s.code || '').toLowerCase().includes(sacSearch.toLowerCase()) ||
+      (s.description || '').toLowerCase().includes(sacSearch.toLowerCase())
+    )
+  );
+  const addSacCode = (h) => {
+    setSacSearch('');
+    setForm((f) => ({
+      ...f,
+      items: [...f.items, {
+        product_id: null,
+        item_name: h.description || h.code,
+        hsn_code: h.code,
+        gst_rate: Number(h.gst_rate) || 0,
+        quantity: 1,
+        unit_price: 0,
+        discount: 0,
+      }],
+    }));
+  };
 
   const addItem = (p) => {
     setForm((f) => {
@@ -93,27 +118,28 @@ export default function Billing() {
   const isCreditDoc = form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE';
   const calc = useMemo(() => {
     const docSign = isCreditDoc ? -1 : 1;
-    let subtotal = 0, discount = 0, cgst = 0, sgst = 0, igst = 0, tax = 0, grand = 0;
+    let subtotal = 0, discount = 0, cgst = 0, sgst = 0, utgst = 0, igst = 0, tax = 0, grand = 0;
     const detail = form.items.map((it) => {
       const gross = it.quantity * it.unit_price;
       let taxable = gross - (it.discount || 0);
-      let cg = 0, sg = 0, ig = 0;
+      let cg = 0, sg = 0, ug = 0, ig = 0;
       const isNil = form.invoice_type === 'NIL';
       const isExport = form.invoice_type === 'EXPORT';
       if (isNil) taxable = 0;
       else if (!isExport) {
         if (isInterstate) ig = r2((taxable * it.gst_rate) / 100);
+        else if (isUt) { cg = r2((taxable * it.gst_rate) / 200); ug = r2((taxable * it.gst_rate) / 200); }
         else { cg = r2((taxable * it.gst_rate) / 200); sg = r2((taxable * it.gst_rate) / 200); }
       }
       subtotal += gross * docSign;
       discount += (it.discount || 0) * docSign;
-      cgst += cg * docSign; sgst += sg * docSign; igst += ig * docSign;
-      tax += (cg + sg + ig) * docSign;
-      grand += (taxable + cg + sg + ig) * docSign;
-      return { ...it, taxable: r2(taxable * docSign), cg: cg * docSign, sg: sg * docSign, ig: ig * docSign, line: r2((taxable + cg + sg + ig) * docSign) };
+      cgst += cg * docSign; sgst += sg * docSign; utgst += ug * docSign; igst += ig * docSign;
+      tax += (cg + sg + ug + ig) * docSign;
+      grand += (taxable + cg + sg + ug + ig) * docSign;
+      return { ...it, taxable: r2(taxable * docSign), cg: cg * docSign, sg: sg * docSign, ug: ug * docSign, ig: ig * docSign, line: r2((taxable + cg + sg + ug + ig) * docSign) };
     });
-    return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), igst: r2(igst), tax: r2(tax), grand: r2(grand) };
-  }, [form.items, isInterstate, isCreditDoc, form.invoice_type]);
+    return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), utgst: r2(utgst), igst: r2(igst), tax: r2(tax), grand: r2(grand) };
+  }, [form.items, isInterstate, isCreditDoc, form.invoice_type, isUt]);
 
   const payload = () => ({
     customer_id: form.customer_id,
@@ -245,7 +271,7 @@ export default function Billing() {
           <div className="field">
             <label>Document Type</label>
             <select value={form.invoice_type} onChange={(e) => setForm((f) => ({ ...f, invoice_type: e.target.value }))}>
-              <option value="">Auto (B2B if customer has GSTIN, else B2C)</option>
+              <option value="">Auto (from customer registration category)</option>
               <option value="B2B">B2B — Tax Invoice (customer has GSTIN)</option>
               <option value="B2C">B2C — Tax Invoice (no GSTIN)</option>
               <option value="CREDIT_NOTE">Credit Note (reduces sales)</option>
@@ -289,7 +315,7 @@ export default function Billing() {
           </div>
           <div className="field">
             <label>Tax Applied</label>
-            <input value={isInterstate ? `IGST (cross-state vs ${company?.state || 'your state'})` : `CGST + SGST (${company?.state || 'same state'})`} disabled />
+            <input value={isInterstate ? `IGST (cross-state vs ${company?.state || 'your state'})` : isUt ? `CGST + UTGST (${company?.state || 'your union territory'})` : `CGST + SGST (${company?.state || 'same state'})`} disabled />
           </div>
           {customer?.outstanding_balance > 0 && (
             <div className="badge badge-amber">Outstanding: {inr(customer.outstanding_balance)}</div>
@@ -308,8 +334,8 @@ export default function Billing() {
             })()
           ) : null}
           <div className="muted mt" style={{ fontSize: 12 }}>
-            Invoice type: {customer?.gstin ? 'B2B' : 'B2C'} · GSTIN: {customer?.gstin || 'Not registered'}
-          </div>
+              Invoice type: {form.invoice_type || (customer?.registration_category === 'unregistered' ? 'B2C' : 'B2B')} · GSTIN: {customer?.gstin || 'Not registered'}
+            </div>
         </div>
       </div>
 
@@ -338,6 +364,23 @@ export default function Billing() {
             ))}
           </div>
         )}
+
+        <div className="card-title mt" style={{ marginTop: 14 }}>Add by HSN / SAC code</div>
+        <div className="field">
+          <input placeholder="Search SAC / HSN codes (e.g. 9983 Professional Services)…" value={sacSearch} onChange={(e) => setSacSearch(e.target.value)} />
+        </div>
+        {visibleSac.length > 0 && (
+          <div className="stats-grid">
+            {visibleSac.slice(0, 30).map((h) => (
+              <button type="button" className="btn" key={h.code} onClick={() => addSacCode(h)} style={{ justifyContent: 'space-between', textAlign: 'left' }}>
+                <span>
+                  <strong>{h.code}</strong>{h.type === 'SAC' ? ' · SAC' : ' · HSN'} · {h.gst_rate}%
+                  <div className="muted" style={{ fontSize: 11.5 }}>{h.description}</div>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -356,7 +399,7 @@ export default function Billing() {
                 <th className="right">GST%</th>
                 <th className="right">Taxable</th>
                 <th className="right">CGST</th>
-                <th className="right">SGST</th>
+                <th className="right">{isUt ? 'UTGST' : 'SGST'}</th>
                 <th className="right">IGST</th>
                 <th className="right">Line</th>
                 <th></th>
@@ -373,7 +416,7 @@ export default function Billing() {
                   <td className="right"><input type="number" min="0" step="0.01" value={it.gst_rate} onChange={setItem(idx, 'gst_rate')} style={{ width: 60, textAlign: 'right' }} /></td>
                   <td className="right nowrap">{inr(it.taxable)}</td>
                   <td className="right nowrap">{inr(it.cg)}</td>
-                  <td className="right nowrap">{inr(it.sg)}</td>
+                  <td className="right nowrap">{inr(isUt ? it.ug : it.sg)}</td>
                   <td className="right nowrap">{inr(it.ig)}</td>
                   <td className="right nowrap">{inr(it.line)}</td>
                   <td className="right"><button type="button" className="btn btn-sm btn-danger" onClick={() => removeItem(idx)}>×</button></td>
@@ -398,7 +441,7 @@ export default function Billing() {
         )}
         {calc.sgst > 0 && (
           <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
-            <div className="muted">SGST</div><div className="right nowrap">{inr(calc.sgst)}</div>
+            <div className="muted">{isUt ? 'UTGST' : 'SGST'}</div><div className="right nowrap">{inr(isUt ? calc.utgst : calc.sgst)}</div>
           </div>
         )}
         {calc.igst > 0 && (

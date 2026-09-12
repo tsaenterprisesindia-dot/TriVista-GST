@@ -103,6 +103,7 @@ async function publicGstSummary(req, res, next) {
               IFNULL(SUM(subtotal),0) AS taxable_value,
               IFNULL(SUM(cgst_total),0) AS cgst,
               IFNULL(SUM(sgst_total),0) AS sgst,
+              IFNULL(SUM(utgst_total),0) AS utgst,
               IFNULL(SUM(igst_total),0) AS igst,
               IFNULL(SUM(cess_total),0) AS cess,
               IFNULL(SUM(tax_total),0) AS total_tax,

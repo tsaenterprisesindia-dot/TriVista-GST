@@ -104,7 +104,7 @@ async function dashboard(req, res, next) {
          AND status NOT IN ('CANCELLED')`
     );
     const [gstCollected] = await pool.query(
-      `SELECT IFNULL(SUM(igst_total)+SUM(cgst_total)+SUM(sgst_total)+SUM(cess_total),0) AS total
+      `SELECT IFNULL(SUM(igst_total)+SUM(cgst_total)+SUM(sgst_total)+SUM(utgst_total)+SUM(cess_total),0) AS total
        FROM invoices WHERE status NOT IN ('CANCELLED')`
     );
     const [receivables] = await pool.query(
@@ -173,6 +173,7 @@ async function salesReport(req, res, next) {
               IFNULL(SUM(discount),0) AS discounts,
               IFNULL(SUM(cgst_total),0) AS cgst,
               IFNULL(SUM(sgst_total),0) AS sgst,
+              IFNULL(SUM(utgst_total),0) AS utgst,
               IFNULL(SUM(igst_total),0) AS igst,
               IFNULL(SUM(cess_total),0) AS cess,
               IFNULL(SUM(tax_total),0) AS tax,
@@ -210,6 +211,7 @@ async function monthReview(req, res, next) {
               IFNULL(SUM(subtotal),0) AS taxable,
               IFNULL(SUM(cgst_total),0) AS cgst,
               IFNULL(SUM(sgst_total),0) AS sgst,
+              IFNULL(SUM(utgst_total),0) AS utgst,
               IFNULL(SUM(igst_total),0) AS igst,
               IFNULL(SUM(cess_total),0) AS cess,
               IFNULL(SUM(tax_total),0) AS tax,
@@ -222,6 +224,7 @@ async function monthReview(req, res, next) {
               IFNULL(SUM(subtotal),0) AS taxable,
               IFNULL(SUM(cgst_total),0) AS cgst,
               IFNULL(SUM(sgst_total),0) AS sgst,
+              IFNULL(SUM(utgst_total),0) AS utgst,
               IFNULL(SUM(igst_total),0) AS igst,
               IFNULL(SUM(cess_total),0) AS cess,
               IFNULL(SUM(tax_total),0) AS tax,
@@ -237,17 +240,17 @@ async function monthReview(req, res, next) {
       [from, to]
     );
     const [outputTax] = await pool.query(
-      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
+      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(utgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
        FROM invoices WHERE invoice_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED')`,
       [from, to]
     );
     const [inputTax] = await pool.query(
-      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
+      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(utgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
        FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND is_rcm=0`,
       [from, to]
     );
     const [rcmTax] = await pool.query(
-      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
+      `SELECT IFNULL(SUM(cgst_total)+SUM(sgst_total)+SUM(utgst_total)+SUM(igst_total)+SUM(cess_total),0) AS total
        FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND is_rcm=1`,
       [from, to]
     );
@@ -309,6 +312,7 @@ async function gstr1(req, res, next) {
               SUM(ii.taxable_value) AS taxable_value,
               SUM(ii.cgst_amount) AS cgst,
               SUM(ii.sgst_amount) AS sgst,
+              SUM(ii.utgst_amount) AS utgst,
               SUM(ii.igst_amount) AS igst,
               SUM(ii.cess_amount) AS cess,
               i.customer_name, i.customer_gstin
@@ -320,10 +324,11 @@ async function gstr1(req, res, next) {
        ORDER BY i.invoice_date`, params
     );
     // aggregate totals
-    const taxTotals = { cgst: 0, sgst: 0, igst: 0, cess: 0, taxable: 0 };
+    const taxTotals = { cgst: 0, sgst: 0, utgst: 0, igst: 0, cess: 0, taxable: 0 };
     for (const r of rows) {
       taxTotals.cgst += Number(r.cgst) || 0;
       taxTotals.sgst += Number(r.sgst) || 0;
+      taxTotals.utgst += Number(r.utgst) || 0;
       taxTotals.igst += Number(r.igst) || 0;
       taxTotals.cess += Number(r.cess) || 0;
       taxTotals.taxable += Number(r.taxable_value) || 0;
@@ -351,6 +356,7 @@ async function gstr1Json(req, res, next) {
               SUM(ii.taxable_value) AS taxable_value,
               SUM(ii.cgst_amount) AS cgst,
               SUM(ii.sgst_amount) AS sgst,
+              SUM(ii.utgst_amount) AS utgst,
               SUM(ii.igst_amount) AS igst,
               SUM(ii.cess_amount) AS cess
        FROM invoice_items ii
@@ -370,6 +376,7 @@ async function gstr1Json(req, res, next) {
       iamt: Math.abs(Math.round(Number(r.igst) * 100) / 100),
       camt: Math.abs(Math.round(Number(r.cgst) * 100) / 100),
       samt: Math.abs(Math.round(Number(r.sgst) * 100) / 100),
+      utamt: Math.abs(Math.round(Number(r.utgst) * 100) / 100),
       csamt: Math.abs(Math.round(Number(r.cess) * 100) / 100),
     });
     const itms = (ins) =>
@@ -417,7 +424,8 @@ async function gstr1Json(req, res, next) {
         hsnMap.set(`${r.hsn_code}|${r.gst_rate}`, {
           hsn: r.hsn_code, rt: Number(r.gst_rate), qty: Number(r.quantity) || 0,
           txval: Number(r.taxable_value) || 0,
-          iamt: Number(r.igst) || 0, camt: Number(r.cgst) || 0, samt: Number(r.sgst) || 0, csamt: Number(r.cess) || 0,
+          iamt: Number(r.igst) || 0, camt: Number(r.cgst) || 0, samt: Number(r.sgst) || 0,
+          utamt: Number(r.utgst) || 0, csamt: Number(r.cess) || 0,
         });
       }
 
@@ -458,12 +466,13 @@ async function gstr1Json(req, res, next) {
       } else {
         for (const r of inv.items) {
           const rt = String(r.gst_rate);
-          if (!b2cs.has(rt)) b2cs.set(rt, { rt: Number(r.gst_rate), ad_amt: 0, txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 });
+          if (!b2cs.has(rt)) b2cs.set(rt, { rt: Number(r.gst_rate), ad_amt: 0, txval: 0, iamt: 0, camt: 0, samt: 0, utamt: 0, csamt: 0 });
           const b = b2cs.get(rt);
           b.txval += Number(r.taxable_value) || 0;
           b.iamt += Number(r.igst) || 0;
           b.camt += Number(r.cgst) || 0;
           b.samt += Number(r.sgst) || 0;
+          b.utamt += Number(r.utgst) || 0;
           b.csamt += Number(r.cess) || 0;
         }
       }
@@ -501,6 +510,7 @@ async function gstr1Json(req, res, next) {
           iamt: Math.abs(Math.round(h.iamt * 100) / 100),
           camt: Math.abs(Math.round(h.camt * 100) / 100),
           samt: Math.abs(Math.round(h.samt * 100) / 100),
+          ...(h.utamt > 0 ? { utamt: Math.abs(Math.round(h.utamt * 100) / 100) } : {}),
           csamt: Math.abs(Math.round(h.csamt * 100) / 100),
           qty: Number(h.qty) || 0,
           unit: 'NOS',
@@ -527,6 +537,7 @@ async function gstr3b(req, res, next) {
               SUM(ii.taxable_value) AS taxable_value,
               SUM(ii.cgst_amount) AS cgst,
               SUM(ii.sgst_amount) AS sgst,
+              SUM(ii.utgst_amount) AS utgst,
               SUM(ii.igst_amount) AS igst,
               SUM(ii.cess_amount) AS cess
        FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
@@ -724,14 +735,14 @@ async function caExport(req, res, next) {
     const nc = `status NOT IN ('CANCELLED')`;
 
     const [sales] = await pool.query(
-      `SELECT invoice_number, invoice_date, customer_name, customer_gstin, place_of_supply, is_interstate,
-              subtotal, discount, tax_total, cgst_total, sgst_total, igst_total, cess_total, grand_total,
+      `SELECT invoice_number, invoice_date, customer_name, customer_gstin, place_of_supply, is_interstate, invoice_type,
+              subtotal, discount, tax_total, cgst_total, sgst_total, utgst_total, igst_total, cess_total, grand_total,
               paid_amount, balance_due
        FROM invoices WHERE invoice_date BETWEEN ? AND ? AND ${nc} ORDER BY invoice_date, invoice_number`, [from, to]
     );
     const [purchases] = await pool.query(
       `SELECT bill_number, bill_date, vendor_name, vendor_gstin, place_of_supply, is_interstate, is_rcm,
-              subtotal, discount, tax_total, cgst_total, sgst_total, igst_total, cess_total, grand_total,
+              subtotal, discount, tax_total, cgst_total, sgst_total, utgst_total, igst_total, cess_total, grand_total,
               paid_amount, balance_due
        FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND ${nc} ORDER BY bill_date, bill_number`, [from, to]
     );
@@ -759,7 +770,8 @@ async function caExport(req, res, next) {
     const [gstr1] = await pool.query(
       `SELECT i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type, ii.hsn_code, ii.gst_rate,
               SUM(ii.quantity) AS quantity, SUM(ii.taxable_value) AS taxable_value,
-              SUM(ii.cgst_amount) AS cgst, SUM(ii.sgst_amount) AS sgst, SUM(ii.igst_amount) AS igst,
+              SUM(ii.cgst_amount) AS cgst, SUM(ii.sgst_amount) AS sgst, SUM(ii.utgst_amount) AS utgst,
+              SUM(ii.igst_amount) AS igst,
               SUM(ii.cess_amount) AS cess, i.customer_name, i.customer_gstin
        FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
        WHERE i.invoice_date BETWEEN ? AND ? AND i.status NOT IN ('CANCELLED')
@@ -769,7 +781,7 @@ async function caExport(req, res, next) {
 
     const [gstr3b] = await pool.query(
       `SELECT ii.gst_rate, SUM(ii.taxable_value) AS taxable_value, SUM(ii.cgst_amount) AS cgst,
-              SUM(ii.sgst_amount) AS sgst, SUM(ii.igst_amount) AS igst, SUM(ii.cess_amount) AS cess
+              SUM(ii.sgst_amount) AS sgst, SUM(ii.utgst_amount) AS utgst, SUM(ii.igst_amount) AS igst, SUM(ii.cess_amount) AS cess
        FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
        WHERE i.invoice_date BETWEEN ? AND ? AND i.status NOT IN ('CANCELLED')
        GROUP BY ii.gst_rate ORDER BY ii.gst_rate`, [from, to]
@@ -782,47 +794,47 @@ async function caExport(req, res, next) {
 
     // Sales register CSV
     const salesCsv = toCsv(
-      ['DocType', 'InvoiceNo', 'Date', 'Customer', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
+      ['DocType', 'InvoiceNo', 'Date', 'Customer', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
       sales.map((r) => ({
         DocType: r.invoice_type || '',
         InvoiceNo: r.invoice_number, Date: r.invoice_date, Customer: r.customer_name, GSTIN: r.customer_gstin || '',
         POS: r.place_of_supply || '', Type: r.is_interstate ? 'Inter-state' : 'Intra-state',
         Taxable: r.subtotal, Discount: r.discount, CGST: r.cgst_total, SGST: r.sgst_total,
-        IGST: r.igst_total, Cess: r.cess_total, Tax: r.tax_total, GrandTotal: r.grand_total,
+        UTGST: r.utgst_total, IGST: r.igst_total, Cess: r.cess_total, Tax: r.tax_total, GrandTotal: r.grand_total,
         Paid: r.paid_amount, BalanceDue: r.balance_due,
       }))
     );
 
     // Purchase register CSV
     const purchaseCsv = toCsv(
-      ['RCM', 'BillNo', 'Date', 'Vendor', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
+      ['RCM', 'BillNo', 'Date', 'Vendor', 'GSTIN', 'POS', 'Type', 'Taxable', 'Discount', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess', 'Tax', 'GrandTotal', 'Paid', 'BalanceDue'],
       purchases.map((r) => ({
         RCM: r.is_rcm ? 'YES' : '',
         BillNo: r.bill_number, Date: r.bill_date, Vendor: r.vendor_name, GSTIN: r.vendor_gstin || '',
         POS: r.place_of_supply || '', Type: r.is_interstate ? 'Inter-state' : 'Intra-state',
         Taxable: r.subtotal, Discount: r.discount, CGST: r.cgst_total, SGST: r.sgst_total,
-        IGST: r.igst_total, Cess: r.cess_total, Tax: r.tax_total, GrandTotal: r.grand_total,
+        UTGST: r.utgst_total, IGST: r.igst_total, Cess: r.cess_total, Tax: r.tax_total, GrandTotal: r.grand_total,
         Paid: r.paid_amount, BalanceDue: r.balance_due,
       }))
     );
 
     // Item-level books
     const saleItemsCsv = toCsv(
-      ['InvoiceNo', 'Date', 'Customer', 'GSTIN', 'HSN', 'Item', 'Qty', 'Unit', 'Rate', 'GST%', 'Discount', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess', 'Value'],
+      ['InvoiceNo', 'Date', 'Customer', 'GSTIN', 'HSN', 'Item', 'Qty', 'Unit', 'Rate', 'GST%', 'Discount', 'Taxable', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess', 'Value'],
       saleItems.map((it) => ({
         InvoiceNo: it.invoice_number, Date: it.invoice_date, Customer: it.customer_name, GSTIN: it.customer_gstin || '',
         HSN: it.hsn_code || '', Item: it.item_name, Qty: it.quantity, Unit: it.unit, Rate: it.unit_price,
         'GST%': it.gst_rate, Discount: it.discount, Taxable: it.taxable_value, CGST: it.cgst_amount,
-        SGST: it.sgst_amount, IGST: it.igst_amount, Cess: it.cess_amount, Value: it.total,
+        SGST: it.sgst_amount, UTGST: it.utgst_amount, IGST: it.igst_amount, Cess: it.cess_amount, Value: it.total,
       }))
     );
     const purItemsCsv = toCsv(
-      ['BillNo', 'Date', 'Vendor', 'GSTIN', 'HSN', 'Item', 'Qty', 'Unit', 'Rate', 'GST%', 'Discount', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess', 'Value'],
+      ['BillNo', 'Date', 'Vendor', 'GSTIN', 'HSN', 'Item', 'Qty', 'Unit', 'Rate', 'GST%', 'Discount', 'Taxable', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess', 'Value'],
       purItems.map((it) => ({
         BillNo: it.bill_number, Date: it.bill_date, Vendor: it.vendor_name, GSTIN: it.vendor_gstin || '',
         HSN: it.hsn_code || '', Item: it.item_name, Qty: it.quantity, Unit: it.unit, Rate: it.unit_price,
         'GST%': it.gst_rate, Discount: it.discount, Taxable: it.taxable_value, CGST: it.cgst_amount,
-        SGST: it.sgst_amount, IGST: it.igst_amount, Cess: it.cess_amount, Value: it.total,
+        SGST: it.sgst_amount, UTGST: it.utgst_amount, IGST: it.igst_amount, Cess: it.cess_amount, Value: it.total,
       }))
     );
 
@@ -834,17 +846,17 @@ async function caExport(req, res, next) {
 
     // GSTR workings
     const gstr1Csv = toCsv(
-      ['InvoiceNo', 'Date', 'Supply', 'DocType', 'HSN', 'GST%', 'Qty', 'TaxableValue', 'CGST', 'SGST', 'IGST', 'Cess', 'Customer', 'GSTIN'],
+      ['InvoiceNo', 'Date', 'Supply', 'DocType', 'HSN', 'GST%', 'Qty', 'TaxableValue', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess', 'Customer', 'GSTIN'],
       gstr1.map((r) => ({
         InvoiceNo: r.invoice_number, Date: r.invoice_date, Supply: r.is_interstate ? 'IGST' : 'Same state',
         DocType: r.invoice_type || '',
         HSN: r.hsn_code || '', 'GST%': r.gst_rate, Qty: r.quantity, TaxableValue: r.taxable_value,
-        CGST: r.cgst, SGST: r.sgst, IGST: r.igst, Cess: r.cess, Customer: r.customer_name, GSTIN: r.customer_gstin || '',
+        CGST: r.cgst, SGST: r.sgst, UTGST: r.utgst, IGST: r.igst, Cess: r.cess, Customer: r.customer_name, GSTIN: r.customer_gstin || '',
       }))
     );
     const gstr3bCsv = toCsv(
-      ['GSTRate', 'TaxableValue', 'CGST', 'SGST', 'IGST', 'Cess'],
-      gstr3b.map((r) => ({ GSTRate: r.gst_rate, TaxableValue: r.taxable_value, CGST: r.cgst, SGST: r.sgst, IGST: r.igst, Cess: r.cess }))
+      ['GSTRate', 'TaxableValue', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess'],
+      gstr3b.map((r) => ({ GSTRate: r.gst_rate, TaxableValue: r.taxable_value, CGST: r.cgst, SGST: r.sgst, UTGST: r.utgst, IGST: r.igst, Cess: r.cess }))
     );
 
     // Outstanding statements (per document)
@@ -935,7 +947,7 @@ async function gstr9(req, res, next) {
     const [outward] = await pool.query(
       `SELECT ii.gst_rate,
               SUM(ii.taxable_value) AS taxable_value,
-              SUM(ii.cgst_amount) AS cgst, SUM(ii.sgst_amount) AS sgst,
+              SUM(ii.cgst_amount) AS cgst, SUM(ii.sgst_amount) AS sgst, SUM(ii.utgst_amount) AS utgst,
               SUM(ii.igst_amount) AS igst, SUM(ii.cess_amount) AS cess
        FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
        WHERE i.invoice_date BETWEEN ? AND ? AND i.status NOT IN ('CANCELLED')
@@ -944,7 +956,7 @@ async function gstr9(req, res, next) {
     const [itc] = await pool.query(
       `SELECT pbi.gst_rate,
               SUM(pbi.taxable_value) AS taxable_value,
-              SUM(pbi.cgst_amount) AS cgst, SUM(pbi.sgst_amount) AS sgst,
+              SUM(pbi.cgst_amount) AS cgst, SUM(pbi.sgst_amount) AS sgst, SUM(pbi.utgst_amount) AS utgst,
               SUM(pbi.igst_amount) AS igst, SUM(pbi.cess_amount) AS cess
        FROM purchase_bill_items pbi JOIN purchase_bills pb ON pb.id=pbi.bill_id
        WHERE pb.bill_date BETWEEN ? AND ? AND pb.status NOT IN ('CANCELLED') AND pb.is_rcm=0 AND pb.vendor_gstin IS NOT NULL
@@ -953,7 +965,7 @@ async function gstr9(req, res, next) {
     const [rcm] = await pool.query(
       `SELECT pbi.gst_rate,
               SUM(pbi.taxable_value) AS taxable_value,
-              SUM(pbi.cgst_amount) AS cgst, SUM(pbi.sgst_amount) AS sgst,
+              SUM(pbi.cgst_amount) AS cgst, SUM(pbi.sgst_amount) AS sgst, SUM(pbi.utgst_amount) AS utgst,
               SUM(pbi.igst_amount) AS igst
        FROM purchase_bill_items pbi JOIN purchase_bills pb ON pb.id=pbi.bill_id
        WHERE pb.bill_date BETWEEN ? AND ? AND pb.status NOT IN ('CANCELLED') AND pb.is_rcm=1
@@ -972,15 +984,15 @@ async function gstr9(req, res, next) {
     res.json({
       period: { from, to },
       outward,
-      outward_totals: { taxable: sumr(outward, 'taxable_value'), cgst: sumr(outward, 'cgst'), sgst: sumr(outward, 'sgst'), igst: sumr(outward, 'igst'), cess: sumr(outward, 'cess') },
+      outward_totals: { taxable: sumr(outward, 'taxable_value'), cgst: sumr(outward, 'cgst'), sgst: sumr(outward, 'sgst'), utgst: sumr(outward, 'utgst'), igst: sumr(outward, 'igst'), cess: sumr(outward, 'cess') },
       itc,
-      itc_totals: { taxable: sumr(itc, 'taxable_value'), cgst: sumr(itc, 'cgst'), sgst: sumr(itc, 'sgst'), igst: sumr(itc, 'igst'), cess: sumr(itc, 'cess') },
+      itc_totals: { taxable: sumr(itc, 'taxable_value'), cgst: sumr(itc, 'cgst'), sgst: sumr(itc, 'sgst'), utgst: sumr(itc, 'utgst'), igst: sumr(itc, 'igst'), cess: sumr(itc, 'cess') },
       rcm,
-      rcm_totals: { taxable: sumr(rcm, 'taxable_value'), cgst: sumr(rcm, 'cgst'), sgst: sumr(rcm, 'sgst'), igst: sumr(rcm, 'igst') },
+      rcm_totals: { taxable: sumr(rcm, 'taxable_value'), cgst: sumr(rcm, 'cgst'), sgst: sumr(rcm, 'sgst'), utgst: sumr(rcm, 'utgst'), igst: sumr(rcm, 'igst') },
       turnover,
       itc_total: itcTotal,
       rcmTax,
-      netGstPayable: Math.round((sumr(outward, 'cgst') + sumr(outward, 'sgst') + sumr(outward, 'igst') - (sumr(itc, 'cgst') + sumr(itc, 'sgst') + sumr(itc, 'igst'))) * 100) / 100,
+      netGstPayable: Math.round((sumr(outward, 'cgst') + sumr(outward, 'sgst') + sumr(outward, 'utgst') + sumr(outward, 'igst') - (sumr(itc, 'cgst') + sumr(itc, 'sgst') + sumr(itc, 'utgst') + sumr(itc, 'igst'))) * 100) / 100,
     });
   } catch (e) {
     next(e);
@@ -1044,6 +1056,7 @@ async function itcRegister(req, res, next) {
     const [rows] = await pool.query(
       `SELECT pb.bill_number, pb.bill_date, pb.vendor_name, pb.vendor_gstin,
               pb.subtotal AS taxable_value, pb.cgst_total AS cgst, pb.sgst_total AS sgst,
+              pb.utgst_total AS utgst,
               pb.igst_total AS igst, pb.tax_total AS total_gst,
               CASE WHEN pb.vendor_gstin IS NULL THEN 'INELIGIBLE (RCM)' ELSE 'ELIGIBLE' END AS eligible,
               pb.grand_total
@@ -1074,7 +1087,7 @@ async function hsnSummary(req, res, next) {
       `SELECT ii.hsn_code, ii.gst_rate, ii.unit,
               SUM(ii.quantity) AS quantity,
               SUM(ii.taxable_value) AS taxable_value,
-              SUM(ii.cgst_amount) AS cgst, SUM(ii.sgst_amount) AS sgst,
+              SUM(ii.cgst_amount) AS cgst, SUM(ii.sgst_amount) AS sgst, SUM(ii.utgst_amount) AS utgst,
               SUM(ii.igst_amount) AS igst, SUM(ii.cess_amount) AS cess,
               COUNT(DISTINCT i.invoice_number) AS txns
        FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
@@ -1085,7 +1098,7 @@ async function hsnSummary(req, res, next) {
     const sumr = (arr, k) => arr.reduce((a, r) => a + (Number(r[k]) || 0), 0);
     res.json({
       data: rows,
-      totals: { quantity: sumr(rows, 'quantity'), taxable_value: sumr(rows, 'taxable_value'), cgst: sumr(rows, 'cgst'), sgst: sumr(rows, 'sgst'), igst: sumr(rows, 'igst'), cess: sumr(rows, 'cess') },
+      totals: { quantity: sumr(rows, 'quantity'), taxable_value: sumr(rows, 'taxable_value'), cgst: sumr(rows, 'cgst'), sgst: sumr(rows, 'sgst'), utgst: sumr(rows, 'utgst'), igst: sumr(rows, 'igst'), cess: sumr(rows, 'cess') },
     });
   } catch (e) {
     next(e);

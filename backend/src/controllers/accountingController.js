@@ -40,7 +40,7 @@ async function createPurchase(req, res, next) {
     // For GSTR-2A matching "supplier invoice no" matters, not our series.
     const billNumber = `PB-${pad((mx[0].mx || 0) + 1, 6)}`;
 
-    let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
+    let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;
@@ -55,10 +55,11 @@ async function createPurchase(req, res, next) {
       discountTotal += disc;
       cgstTotal += tax.cgst;
       sgstTotal += tax.sgst;
+      utgstTotal += tax.utgst;
       igstTotal += tax.igst;
       cessTotal += tax.cess;
-      taxTotal += tax.cgst + tax.sgst + tax.igst + tax.cess;
-      grandTotal += taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess;
+      taxTotal += tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess;
+      grandTotal += taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess;
 
       // Stock IN for products (goods purchased)
       if (it.product_id) {
@@ -93,12 +94,12 @@ async function createPurchase(req, res, next) {
     const [ins] = await conn.query(
       `INSERT INTO purchase_bills
        (bill_number,bill_date,due_date,vendor_id,vendor_name,vendor_gstin,place_of_supply,is_interstate,is_rcm,status,
-        subtotal,discount,cgst_total,sgst_total,igst_total,cess_total,tax_total,grand_total,tds_amount,paid_amount,balance_due,notes,created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        subtotal,discount,cgst_total,sgst_total,utgst_total,igst_total,cess_total,tax_total,grand_total,tds_amount,paid_amount,balance_due,notes,created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         billNumber, b.bill_date || new Date().toISOString().slice(0, 10), b.due_date || null,
         vendor.id, vendor.name, vendor.gstin || null, placeOfSupply, isInterstate ? 1 : 0, isRcm ? 1 : 0, 'PENDING',
-        round2(subtotal), round2(discountTotal), round2(cgstTotal), round2(sgstTotal), round2(igstTotal),
+        round2(subtotal), round2(discountTotal), round2(cgstTotal), round2(sgstTotal), round2(utgstTotal), round2(igstTotal),
         round2(cessTotal), round2(taxTotal), round2(grandTotal), tdsAmount, 0, round2(grandTotal), b.notes || null, req.user.id,
       ]
     );
@@ -117,11 +118,11 @@ async function createPurchase(req, res, next) {
       await conn.query(
         `INSERT INTO purchase_bill_items
          (bill_id,product_id,item_name,hsn_code,gst_rate,quantity,unit,unit_price,discount,
-          taxable_value,cgst_amount,sgst_amount,igst_amount,cess_amount,total)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          taxable_value,cgst_amount,sgst_amount,utgst_amount,igst_amount,cess_amount,total)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [billId, pid, it.item_name, it.hsn_code || null, gstRate, qty, it.unit || 'PCS', rate, disc,
-         round2(taxableValue), tax.cgst, tax.sgst, tax.igst, tax.cess,
-         round2(taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess)]
+         round2(taxableValue), tax.cgst, tax.sgst, tax.utgst, tax.igst, tax.cess,
+         round2(taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess)]
       );
     }
 
@@ -153,6 +154,7 @@ async function createPurchase(req, res, next) {
       subtotal: round2(subtotal),
       cgst_total: round2(cgstTotal),
       sgst_total: round2(sgstTotal),
+      utgst_total: round2(utgstTotal),
       igst_total: round2(igstTotal),
       grand_total: round2(grandTotal),
       is_rcm: isRcm ? 1 : 0,

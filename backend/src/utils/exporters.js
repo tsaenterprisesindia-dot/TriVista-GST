@@ -46,6 +46,7 @@ function invoicesCsv(invoices) {
     'TaxableValue',
     'CGST',
     'SGST',
+    'UTGST',
     'IGST',
     'Cess',
     'Total',
@@ -71,6 +72,7 @@ function invoicesCsv(invoices) {
         TaxableValue: it.taxable_value,
         CGST: it.cgst_amount,
         SGST: it.sgst_amount,
+        UTGST: it.utgst_amount || 0,
         IGST: it.igst_amount,
         Cess: it.cess_amount,
         Total: it.total,
@@ -121,22 +123,28 @@ function tallyXml(invoices, company) {
     const d = String(inv.invoice_date);
     const hasCgst = Number(inv.cgst_total) > 0;
     const hasIgst = Number(inv.igst_total) > 0;
+    const hasUtgst = Number(inv.utgst_total) > 0;
 
     parts.push(`<VOUCHER><DATE>${esc(d)}</DATE><NARRATION>${esc(inv.notes || '')}</NARRATION><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><VOUCHERNUMBER>${esc(inv.invoice_number)}</VOUCHERNUMBER>`);
     parts.push(`<PARTYLEDGERNAME>${esc(inv.customer_name || 'Customer')}</PARTYLEDGERNAME>${inv.customer_gstin ? `<GSTIN>${esc(inv.customer_gstin)}</GSTIN>` : ''}`);
     for (const it of inv.items || []) {
       parts.push(`<ALLLEDGERENTRIES.LIST>`);
       parts.push(`<LEDGERNAME>${it.is_service ? 'Service Income' : 'Sales Income'}</LEDGERNAME>`);
-      parts.push(`<GSTCLASS><TAXABILITY>Taxable</TAXABILITY><HSNCODE>${esc(it.hsn_code || '')}</HSNCODE><GSTDETAILS><ASSESSABLEVALUE>${it.taxable_value || 0}</ASSESSABLEVALUE><IGST>${it.igst_amount || 0}</IGST><CGST>${it.cgst_amount || 0}</CGST><SGST>${it.sgst_amount || 0}</SGST><CESS>${it.cess_amount || 0}</CESS></GSTDETAILS></GSTCLASS>`);
+      parts.push(`<GSTCLASS><TAXABILITY>Taxable</TAXABILITY><HSNCODE>${esc(it.hsn_code || '')}</HSNCODE><GSTDETAILS><ASSESSABLEVALUE>${it.taxable_value || 0}</ASSESSABLEVALUE><IGST>${it.igst_amount || 0}</IGST><CGST>${it.cgst_amount || 0}</CGST><SGST>${it.sgst_amount || 0}</SGST><UTGST>${it.utgst_amount || 0}</UTGST><CESS>${it.cess_amount || 0}</CESS></GSTDETAILS></GSTCLASS>`);
       parts.push(`<AMOUNT>-${it.taxable_value || 0}</AMOUNT>`);
       parts.push(`</ALLLEDGERENTRIES.LIST>`);
     }
     if (hasIgst) {
       parts.push(`<ALLLEDGERENTRIES.LIST><LEDGERNAME>GST Output (IGST Payable)</LEDGERNAME><AMOUNT>-${inv.igst_total}</AMOUNT></ALLLEDGERENTRIES.LIST>`);
     }
+    if (hasUtgst) {
+      parts.push(`<ALLLEDGERENTRIES.LIST><LEDGERNAME>GST Output (UTGST Payable)</LEDGERNAME><AMOUNT>-${inv.utgst_total}</AMOUNT></ALLLEDGERENTRIES.LIST>`);
+    }
     if (hasCgst) {
       parts.push(`<ALLLEDGERENTRIES.LIST><LEDGERNAME>GST Output (CGST Payable)</LEDGERNAME><AMOUNT>-${inv.cgst_total}</AMOUNT></ALLLEDGERENTRIES.LIST>`);
-      parts.push(`<ALLLEDGERENTRIES.LIST><LEDGERNAME>GST Output (SGST Payable)</LEDGERNAME><AMOUNT>-${inv.sgst_total}</AMOUNT></ALLLEDGERENTRIES.LIST>`);
+      if (Number(inv.sgst_total) > 0) {
+        parts.push(`<ALLLEDGERENTRIES.LIST><LEDGERNAME>GST Output (SGST Payable)</LEDGERNAME><AMOUNT>-${inv.sgst_total}</AMOUNT></ALLLEDGERENTRIES.LIST>`);
+      }
     }
     parts.push(`<ALLLEDGERENTRIES.LIST><LEDGERNAME>Accounts Receivable (Debtors)</LEDGERNAME><AMOUNT>${inv.grand_total}</AMOUNT></ALLLEDGERENTRIES.LIST>`);
     parts.push(`</VOUCHER>`);

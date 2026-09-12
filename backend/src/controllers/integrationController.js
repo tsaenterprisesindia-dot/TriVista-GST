@@ -141,6 +141,7 @@ async function buildEinvoicePayload(invoiceId) {
       CgstVal: Number(inv.cgst_total) || 0,
       SgstVal: Number(inv.sgst_total) || 0,
       IgstVal: Number(inv.igst_total) || 0,
+      UtrgstVal: Number(inv.utgst_total) || 0,
       CessVal: Number(inv.cess_total) || 0,
       OthChrg: Number(inv.discount || 0) * -1,
       RndOffAmt: Number(inv.round_off || 0),
@@ -488,4 +489,4 @@ async function status(req, res, next) {
   }
 }
 
-module.exports = { buildEinvoicePayload, generateEinvoice, simulateIrn, submitIrn, einvoiceLogs, generateEwaybill, submitEway, ewaybillLogs, status, getSettings, saveSettings };
+module.exports = { buildEinvoicePayload, buildEwayPayload, generateEinvoice, simulateIrn, submitIrn, einvoiceLogs, generateEwaybill, submitEway, ewaybillLogs, status, getSettings, saveSettings };

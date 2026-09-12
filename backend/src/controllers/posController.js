@@ -49,7 +49,7 @@ async function posSale(req, res, next) {
 
     const invoiceNumber = await allocateInvoiceNumber(conn, branch, new Date().toISOString().slice(0, 10));
 
-    let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
+    let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;
@@ -64,10 +64,11 @@ async function posSale(req, res, next) {
       discountTotal += disc;
       cgstTotal += tax.cgst;
       sgstTotal += tax.sgst;
+      utgstTotal += tax.utgst;
       igstTotal += tax.igst;
       cessTotal += tax.cess;
-      taxTotal += tax.cgst + tax.sgst + tax.igst + tax.cess;
-      grandTotal += taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess;
+      taxTotal += tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess;
+      grandTotal += taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess;
 
       if (it.product_id) {
         const [p] = await conn.query('SELECT is_service FROM products WHERE id=?', [it.product_id]);
@@ -105,13 +106,13 @@ async function posSale(req, res, next) {
     const [ins] = await conn.query(
       `INSERT INTO invoices
        (invoice_number,invoice_date,customer_id,customer_name,status,subtotal,discount,
-        cgst_total,sgst_total,igst_total,cess_total,tax_total,round_off,grand_total,
+        cgst_total,sgst_total,utgst_total,igst_total,cess_total,tax_total,round_off,grand_total,
         paid_amount,balance_due,payment_mode,tcs_amount,notes,created_by,place_of_supply,is_interstate,invoice_type)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         invoiceNumber, new Date().toISOString().slice(0, 10), customer.id, customer.name,
         'PAID', round2(subtotal), round2(discountTotal),
-        round2(cgstTotal), round2(sgstTotal), round2(igstTotal), round2(cessTotal),
+        round2(cgstTotal), round2(sgstTotal), round2(utgstTotal), round2(igstTotal), round2(cessTotal),
         round2(taxTotal), roundOff, grandTotal,
         grandTotal, 0,
         b.payment_mode || 'CASH', tcsAmount, b.notes || 'POS sale', req.user.id,
@@ -130,11 +131,11 @@ async function posSale(req, res, next) {
       await conn.query(
         `INSERT INTO invoice_items
          (invoice_id,product_id,item_name,hsn_code,gst_rate,quantity,unit,unit_price,discount,
-          taxable_value,cgst_amount,sgst_amount,igst_amount,cess_amount,total)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          taxable_value,cgst_amount,sgst_amount,utgst_amount,igst_amount,cess_amount,total)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [invoiceId, it.product_id || null, it.item_name, it.hsn_code || null, gstRate, qty, it.unit || 'PCS',
-         rate, disc, round2(taxableValue), tax.cgst, tax.sgst, tax.igst, tax.cess,
-         round2(taxableValue + tax.cgst + tax.sgst + tax.igst + tax.cess)]
+         rate, disc, round2(taxableValue), tax.cgst, tax.sgst, tax.utgst, tax.igst, tax.cess,
+         round2(taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess)]
       );
     }
 
@@ -154,6 +155,7 @@ async function posSale(req, res, next) {
       subtotal: round2(subtotal),
       cgst_total: round2(cgstTotal),
       sgst_total: round2(sgstTotal),
+      utgst_total: round2(utgstTotal),
       igst_total: round2(igstTotal),
     }, req.user.id);
     await ledger.postSalePayment(conn, {

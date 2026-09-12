@@ -219,6 +219,7 @@ async function seed() {
         ['2100','GST Output (CGST Payable)','LIABILITY'],
         ['2200','GST Output (SGST Payable)','LIABILITY'],
         ['2300','GST Output (IGST Payable)','LIABILITY'],
+        ['2400','GST Output (UTGST Payable)','LIABILITY'],
         ['3000','Capital / Owner Equity','EQUITY'],
         ['4000','Sales Income','INCOME'],
         ['4100','Service Income','INCOME'],
@@ -231,6 +232,7 @@ async function seed() {
         ['2600','Input CGST Credit','ASSET'],
         ['2700','Input SGST Credit','ASSET'],
         ['2800','Input IGST Credit','ASSET'],
+        ['2900','Input UTGST Credit','ASSET'],
         ['5600','Round Off','EXPENSE'],
       ];
       for (const a of accts) {

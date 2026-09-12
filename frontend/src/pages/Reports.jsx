@@ -154,6 +154,7 @@ export default function Reports() {
               <SummaryRow label="Discounts" value={s.discounts} />
               <SummaryRow label="CGST" value={s.cgst} />
               <SummaryRow label="SGST" value={s.sgst} />
+              {s.utgst > 0 && <SummaryRow label="UTGST" value={s.utgst} />}
               <SummaryRow label="IGST" value={s.igst} />
               <SummaryRow label="Cess" value={s.cess} />
               <SummaryRow label="Total Tax" value={s.tax} />
@@ -190,6 +191,7 @@ export default function Reports() {
                   <th className="right">Taxable Value</th>
                   <th className="right">CGST</th>
                   <th className="right">SGST</th>
+                  <th className="right">UTGST</th>
                   <th className="right">IGST</th>
                   <th className="right">Cess</th>
                 </tr>
@@ -201,6 +203,7 @@ export default function Reports() {
                     <td className="right nowrap">{inr(r.taxable_value)}</td>
                     <td className="right nowrap">{inr(r.cgst)}</td>
                     <td className="right nowrap">{inr(r.sgst)}</td>
+                    <td className="right nowrap">{inr(r.utgst)}</td>
                     <td className="right nowrap">{inr(r.igst)}</td>
                     <td className="right nowrap">{inr(r.cess)}</td>
                   </tr>
@@ -238,6 +241,7 @@ export default function Reports() {
                 <th className="right">Taxable</th>
                 <th className="right">CGST</th>
                 <th className="right">SGST</th>
+                <th className="right">UTGST</th>
                 <th className="right">IGST</th>
                 <th className="right">Cess</th>
                 <th>Customer</th>
@@ -256,6 +260,7 @@ export default function Reports() {
                   <td className="right nowrap">{inr(r.taxable_value)}</td>
                   <td className="right nowrap">{inr(r.cgst)}</td>
                   <td className="right nowrap">{inr(r.sgst)}</td>
+                  <td className="right nowrap">{inr(r.utgst)}</td>
                   <td className="right nowrap">{inr(r.igst)}</td>
                   <td className="right nowrap">{inr(r.cess)}</td>
                   <td>{r.customer_name}</td>
@@ -269,6 +274,7 @@ export default function Reports() {
                 <td className="right nowrap"><strong>{inr(gstr1.totals?.taxable)}</strong></td>
                 <td className="right nowrap"><strong>{inr(gstr1.totals?.cgst)}</strong></td>
                 <td className="right nowrap"><strong>{inr(gstr1.totals?.sgst)}</strong></td>
+                <td className="right nowrap"><strong>{inr(gstr1.totals?.utgst)}</strong></td>
                 <td className="right nowrap"><strong>{inr(gstr1.totals?.igst)}</strong></td>
                 <td className="right nowrap"><strong>{inr(gstr1.totals?.cess)}</strong></td>
                 <td colSpan="2" />
@@ -459,8 +465,8 @@ export default function Reports() {
               className="btn btn-sm"
               disabled={!gstr9}
               onClick={() =>
-                csvExport(`gstr9-${from}-to-${to}.csv`, ['Rate%', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess'],
-                  gstr9?.outward.map((r) => [r.gst_rate, r.taxable_value, r.cgst, r.sgst, r.igst, r.cess]))
+                csvExport(`gstr9-${from}-to-${to}.csv`, ['Rate%', 'Taxable', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess'],
+                  gstr9?.outward.map((r) => [r.gst_rate, r.taxable_value, r.cgst, r.sgst, r.utgst, r.igst, r.cess]))
               }
             >
               CSV
@@ -473,27 +479,27 @@ export default function Reports() {
           <div className="grid-2">
             <div>
               <table className="mt">
-                <thead><tr><th>Rate</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th><th className="right">Cess</th></tr></thead>
+                <thead><tr><th>Rate</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">UTGST</th><th className="right">IGST</th><th className="right">Cess</th></tr></thead>
                 <tbody>
                   {gstr9.outward.map((r, i) => (
-                    <tr key={i}><td>{r.gst_rate}%</td><td className="right nowrap">{inr(r.taxable_value)}</td><td className="right nowrap">{inr(r.cgst)}</td><td className="right nowrap">{inr(r.sgst)}</td><td className="right nowrap">{inr(r.igst)}</td><td className="right nowrap">{inr(r.cess)}</td></tr>
+                    <tr key={i}><td>{r.gst_rate}%</td><td className="right nowrap">{inr(r.taxable_value)}</td><td className="right nowrap">{inr(r.cgst)}</td><td className="right nowrap">{inr(r.sgst)}</td><td className="right nowrap">{inr(r.utgst || 0)}</td><td className="right nowrap">{inr(r.igst)}</td><td className="right nowrap">{inr(r.cess)}</td></tr>
                   ))}
-                  {gstr9.outward.length === 0 && <tr><td colSpan="6" className="empty">No outward supply.</td></tr>}
+                  {gstr9.outward.length === 0 && <tr><td colSpan="7" className="empty">No outward supply.</td></tr>}
                 </tbody>
                 <tfoot>
-                  <tr><td><strong>Total</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.taxable)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.cgst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.sgst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.igst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.cess)}</strong></td></tr>
+                  <tr><td><strong>Total</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.taxable)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.cgst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.sgst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.utgst || 0)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.igst)}</strong></td><td className="right nowrap"><strong>{inr(gstr9.outward_totals?.cess)}</strong></td></tr>
                 </tfoot>
               </table>
               <p className="muted" style={{ margin: '10px 0' }}>Turnover (books): <strong>{inr(gstr9.turnover)}</strong> · ITC booked: <strong>{inr(gstr9.itc_total)}</strong></p>
             </div>
             <div>
               <table className="mt">
-                <thead><tr><th>RCM supplies (no vendor GSTIN)</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th></tr></thead>
+                <thead><tr><th>RCM supplies (no vendor GSTIN)</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">UTGST</th><th className="right">IGST</th></tr></thead>
                 <tbody>
                   {gstr9.rcm.map((r, i) => (
-                    <tr key={i}><td>{r.gst_rate}%</td><td className="right nowrap">{inr(r.taxable_value)}</td><td className="right nowrap">{inr(r.cgst)}</td><td className="right nowrap">{inr(r.sgst)}</td><td className="right nowrap">{inr(r.igst)}</td></tr>
+                    <tr key={i}><td>{r.gst_rate}%</td><td className="right nowrap">{inr(r.taxable_value)}</td><td className="right nowrap">{inr(r.cgst)}</td><td className="right nowrap">{inr(r.sgst)}</td><td className="right nowrap">{inr(r.utgst || 0)}</td><td className="right nowrap">{inr(r.igst)}</td></tr>
                   ))}
-                  {gstr9.rcm.length === 0 && <tr><td colSpan="5" className="empty">No RCM.</td></tr>}
+                  {gstr9.rcm.length === 0 && <tr><td colSpan="6" className="empty">No RCM.</td></tr>}
                 </tbody>
               </table>
               <div className="summary-row">
@@ -551,8 +557,8 @@ export default function Reports() {
               className="btn btn-sm"
               disabled={!itcReg}
               onClick={() =>
-                csvExport(`itc-register-${from}-to-${to}.csv`, ['Bill', 'Date', 'Vendor', 'GSTIN', 'Type', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total GST', 'Grand'],
-                  itcReg?.data.map((r) => [r.bill_number, r.bill_date, r.vendor_name, r.vendor_gstin || '', r.eligible, r.taxable_value, r.cgst, r.sgst, r.igst, r.total_gst, r.grand_total]))
+                csvExport(`itc-register-${from}-to-${to}.csv`, ['Bill', 'Date', 'Vendor', 'GSTIN', 'Type', 'Taxable', 'CGST', 'SGST', 'UTGST', 'IGST', 'Total GST', 'Grand'],
+                  itcReg?.data.map((r) => [r.bill_number, r.bill_date, r.vendor_name, r.vendor_gstin || '', r.eligible, r.taxable_value, r.cgst, r.sgst, r.utgst, r.igst, r.total_gst, r.grand_total]))
               }
             >
               CSV
@@ -565,7 +571,7 @@ export default function Reports() {
           <>
             <table>
               <thead>
-                <tr><th>Bill</th><th>Date</th><th>Vendor</th><th>GSTIN</th><th>Type</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th><th className="right">Total GST</th></tr>
+                <tr><th>Bill</th><th>Date</th><th>Vendor</th><th>GSTIN</th><th>Type</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">UTGST</th><th className="right">IGST</th><th className="right">Total GST</th></tr>
               </thead>
               <tbody>
                 {itcReg.data.map((r, i) => (
@@ -578,11 +584,12 @@ export default function Reports() {
                     <td className="right nowrap">{inr(r.taxable_value)}</td>
                     <td className="right nowrap">{inr(r.cgst)}</td>
                     <td className="right nowrap">{inr(r.sgst)}</td>
+                    <td className="right nowrap">{inr(r.utgst || 0)}</td>
                     <td className="right nowrap">{inr(r.igst)}</td>
                     <td className="right nowrap">{inr(r.total_gst)}</td>
                   </tr>
                 ))}
-                {itcReg.data.length === 0 && <tr><td colSpan="10" className="empty">No purchases in period.</td></tr>}
+                {itcReg.data.length === 0 && <tr><td colSpan="11" className="empty">No purchases in period.</td></tr>}
               </tbody>
             </table>
             <div className="summary-row" style={{ display: 'flex', gap: 24, marginTop: 10 }}>
@@ -601,8 +608,8 @@ export default function Reports() {
               className="btn btn-sm"
               disabled={!hsn}
               onClick={() =>
-                csvExport(`hsn-summary-${from}-to-${to}.csv`, ['HSN', 'Rate%', 'Unit', 'Qty', 'Txns', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess'],
-                  hsn?.data.map((r) => [r.hsn_code, r.gst_rate, r.unit, r.quantity, r.txns, r.taxable_value, r.cgst, r.sgst, r.igst, r.cess]))
+                csvExport(`hsn-summary-${from}-to-${to}.csv`, ['HSN', 'Rate%', 'Unit', 'Qty', 'Txns', 'Taxable', 'CGST', 'SGST', 'UTGST', 'IGST', 'Cess'],
+                  hsn?.data.map((r) => [r.hsn_code, r.gst_rate, r.unit, r.quantity, r.txns, r.taxable_value, r.cgst, r.sgst, r.utgst, r.igst, r.cess]))
               }
             >
               CSV
@@ -614,7 +621,7 @@ export default function Reports() {
         ) : (
           <table>
             <thead>
-              <tr><th>HSN</th><th>Rate %</th><th>Unit</th><th className="right">Qty</th><th className="right">Txns</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">IGST</th><th className="right">Cess</th></tr>
+              <tr><th>HSN</th><th>Rate %</th><th>Unit</th><th className="right">Qty</th><th className="right">Txns</th><th className="right">Taxable</th><th className="right">CGST</th><th className="right">SGST</th><th className="right">UTGST</th><th className="right">IGST</th><th className="right">Cess</th></tr>
             </thead>
             <tbody>
               {hsn.data.map((r, i) => (
@@ -627,14 +634,15 @@ export default function Reports() {
                   <td className="right nowrap">{inr(r.taxable_value)}</td>
                   <td className="right nowrap">{inr(r.cgst)}</td>
                   <td className="right nowrap">{inr(r.sgst)}</td>
+                  <td className="right nowrap">{inr(r.utgst || 0)}</td>
                   <td className="right nowrap">{inr(r.igst)}</td>
                   <td className="right nowrap">{inr(r.cess)}</td>
                 </tr>
               ))}
-              {hsn.data.length === 0 && <tr><td colSpan="10" className="empty">No sales in period.</td></tr>}
+              {hsn.data.length === 0 && <tr><td colSpan="11" className="empty">No sales in period.</td></tr>}
             </tbody>
             <tfoot>
-              <tr><td colSpan="3"><strong>Totals</strong></td><td className="right"><strong>{hsn.totals?.quantity}</strong></td><td /><td className="right nowrap"><strong>{inr(hsn.totals?.taxable_value)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.cgst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.sgst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.igst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.cess)}</strong></td></tr>
+              <tr><td colSpan="3"><strong>Totals</strong></td><td className="right"><strong>{hsn.totals?.quantity}</strong></td><td /><td className="right nowrap"><strong>{inr(hsn.totals?.taxable_value)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.cgst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.sgst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.utgst || 0)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.igst)}</strong></td><td className="right nowrap"><strong>{inr(hsn.totals?.cess)}</strong></td></tr>
             </tfoot>
           </table>
         )}

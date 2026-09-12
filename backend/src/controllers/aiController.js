@@ -218,7 +218,7 @@ Try any of these in plain English.`,
   if (/(gst|tax)/.test(m) && /(collect|output|input|payable|paid|total\s*gst|\bgst\s*amount)/.test(m)) {
     const [r] = await pool.query(
       `SELECT IFNULL(SUM(cgst_total),0) c, IFNULL(SUM(sgst_total),0) s, IFNULL(SUM(igst_total),0) i,
-              IFNULL(SUM(tax_total),0) tax, COUNT(*) n
+              IFNULL(SUM(utgst_total),0) u, IFNULL(SUM(tax_total),0) tax, COUNT(*) n
        FROM invoices WHERE status NOT IN ('CANCELLED')${periodClause(p, 'invoice_date')}`,
       p.all ? [] : [p.f, p.t]
     );
@@ -226,6 +226,7 @@ Try any of these in plain English.`,
       intent: 'gst',
       answer: `GST collected on ${r[0].n} invoice(s) (${rng}):
 • CGST: ${fmtINR(r[0].c)}  • SGST: ${fmtINR(r[0].s)}  • IGST: ${fmtINR(r[0].i)}
+• UTGST: ${fmtINR(r[0].u)}
 • Total GST: ${fmtINR(r[0].tax)}`,
     };
   }
