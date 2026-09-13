@@ -277,11 +277,11 @@ export default function CompanySettings() {
           <div className="card-title">Business / Enterprise Master</div>
           <div className="grid-3">
             <div className="field">
-              <label>Legal Name</label>
-              <input value={form.legal_name} onChange={set('legal_name')} placeholder="Registered company / proprietorship name" />
+              <label>Legal Name *</label>
+              <input value={form.legal_name} onChange={set('legal_name')} required placeholder="Registered company / proprietorship name" />
             </div>
             <div className="field">
-              <label>Trade Name</label>
+              <label>Trade Name (Optional)</label>
               <input value={form.trade_name} onChange={set('trade_name')} placeholder="Brand name on invoices (optional)" />
             </div>
             <div className="field">

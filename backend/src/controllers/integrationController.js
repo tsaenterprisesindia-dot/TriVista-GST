@@ -118,7 +118,7 @@ async function buildEinvoicePayload(invoiceId) {
     },
     BuyerDtls: {
       Gstin: customer.gstin || 'URP',
-      LglNm: customer.company_name || customer.name || '',
+      LglNm: customer.legal_name || customer.name || customer.company_name || '',
       TrdNm: customer.company_name || '',
       Pos: inv.place_of_supply || customer.state_code || '',
       Addr1: customer.address_line1 || '',
@@ -129,7 +129,7 @@ async function buildEinvoicePayload(invoiceId) {
     },
     ShipDtls: {
       Gstin: null,
-      LglNm: customer.company_name || customer.name || '',
+      LglNm: customer.legal_name || customer.name || customer.company_name || '',
       Addr1: customer.address_line1 || '',
       Loc: customer.city || '',
       Pin: customer.pincode || '',

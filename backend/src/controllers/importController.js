@@ -23,17 +23,19 @@ async function bulk(req, res, next) {
         let id;
         if (kind === 'customers') {
           const name = String(r.name || r.company_name || '').trim();
-          if (!name) throw new Error('name/company_name is required.');
+          if (!name) throw new Error('name is required.');
+          const legal_name = String(r.legal_name || r.name || '').trim();
+          if (!legal_name) throw new Error('legal_name is required.');
           const gstin = String(r.gstin || '').trim() || null;
           if (gstin && !isValidGstin(gstin)) throw new Error(`Invalid GSTIN "${r.gstin}".`);
           const [mx] = await pool.query('SELECT COALESCE(MAX(id),0) AS mx FROM customers');
           const code = `CUST-${pad((mx[0].mx || 0) + 1, 4)}`;
           const [ins] = await pool.query(
             `INSERT INTO customers
-             (customer_code,name,company_name,gstin,pan,phone,email,address_line1,address_line2,city,state,state_code,pincode,opening_balance,credit_limit,is_active,created_by)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (customer_code,name,legal_name,company_name,gstin,pan,phone,email,address_line1,address_line2,city,state,state_code,pincode,opening_balance,credit_limit,is_active,created_by)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [
-              code, name, r.company_name || null, gstin, r.pan || null, r.phone || null, r.email || null,
+              code, name, legal_name, r.trade_name || r.company_name || null, gstin, r.pan || null, r.phone || null, r.email || null,
               r.address_line1 || null, r.address_line2 || null, r.city || null, r.state || null,
               r.state_code || null, r.pincode || null, Number(r.opening_balance) || 0, r.credit_limit || null,
               r.is_active === undefined ? 1 : r.is_active ? 1 : 0, req.user.id,
@@ -42,16 +44,18 @@ async function bulk(req, res, next) {
           id = ins.insertId;
         } else if (kind === 'vendors') {
           const name = String(r.name || r.company_name || '').trim();
-          if (!name) throw new Error('name/company_name is required.');
+          if (!name) throw new Error('name is required.');
+          const legal_name = String(r.legal_name || r.name || '').trim();
+          if (!legal_name) throw new Error('legal_name is required.');
           const gstin = String(r.gstin || '').trim() || null;
           if (gstin && !isValidGstin(gstin)) throw new Error(`Invalid GSTIN "${r.gstin}".`);
           const [mx] = await pool.query('SELECT COALESCE(MAX(id),0) AS mx FROM vendors');
           const code = `VEND-${pad((mx[0].mx || 0) + 1, 4)}`;
           const [ins] = await pool.query(
             `INSERT INTO vendors
-             (vendor_code,name,company_name,gstin,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-            [code, name, r.company_name || null, gstin, r.pan || null, r.phone || null, r.email || null,
+             (vendor_code,name,legal_name,company_name,gstin,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [code, name, legal_name, r.trade_name || r.company_name || null, gstin, r.pan || null, r.phone || null, r.email || null,
              r.address_line1 || null, r.city || null, r.state || null, r.state_code || null, r.pincode || null,
              Number(r.opening_balance) || 0]
           );

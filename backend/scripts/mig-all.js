@@ -32,6 +32,7 @@ const ORDER = [
   'mig-09-parties.js',
   'mig-10-invoice-type.js',
   'mig-11-utgst.js',
+  'mig-12-party-legal-trade.js',
 ];
 
 const DB = {

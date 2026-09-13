@@ -7,6 +7,7 @@ const inr = (n) =>
 
 const empty = {
   name: '',
+  legal_name: '',
   company_name: '',
   gstin: '',
   registration_category: '',
@@ -85,6 +86,7 @@ export default function Vendors() {
     setEditId(v.id);
     setForm({
       name: v.name,
+      legal_name: v.legal_name,
       company_name: v.company_name,
       gstin: v.gstin,
       registration_category: v.registration_category || '',
@@ -170,11 +172,15 @@ export default function Vendors() {
             <div className="grid-3">
               <div className="field">
                 <label>Name *</label>
-                <input value={form.name} onChange={set('name')} required />
+                <input value={form.name} onChange={set('name')} required placeholder="Person / business name" />
               </div>
               <div className="field">
-                <label>Company</label>
-                <input value={form.company_name} onChange={set('company_name')} />
+                <label>Legal Name *</label>
+                <input value={form.legal_name} onChange={set('legal_name')} required placeholder="Registered / legal name" />
+              </div>
+              <div className="field">
+                <label>Trade Name (Optional)</label>
+                <input value={form.company_name} onChange={set('company_name')} placeholder="Brand name, e.g. store / business name" />
               </div>
               <div className="field">
                 <label>GSTIN</label>
@@ -271,7 +277,8 @@ export default function Vendors() {
               <tr>
                 <th>Code</th>
                 <th>Name</th>
-                <th>Company</th>
+                <th>Legal Name</th>
+                <th>Trade Name</th>
                 <th>GSTIN</th>
                 <th>PAN</th>
                 <th>Phone</th>
@@ -286,6 +293,7 @@ export default function Vendors() {
                 <tr key={v.id}>
                   <td className="nowrap">{v.vendor_code || '—'}</td>
                   <td>{v.name}</td>
+                  <td>{v.legal_name || '—'}</td>
                   <td>{v.company_name || '—'}</td>
                   <td className="nowrap">
                     {v.gstin || '—'}

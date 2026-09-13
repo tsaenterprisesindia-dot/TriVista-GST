@@ -183,16 +183,16 @@ async function seed() {
     const [custCount] = await conn.query('SELECT COUNT(*) AS c FROM customers');
     if (!CLEAN && custCount[0].c === 0) {
       await conn.query(
-        `INSERT INTO customers (customer_code,name,gstin,phone,email,address_line1,city,state,state_code,pincode,opening_balance,credit_limit)
-         VALUES ('CUST-0001','Walk-in Customer',NULL,NULL,NULL,'On Counter','Bengaluru','Karnataka','29','560001',0,NULL)`
+        `INSERT INTO customers (customer_code,name,legal_name,gstin,phone,email,address_line1,city,state,state_code,pincode,opening_balance,credit_limit)
+         VALUES ('CUST-0001','Walk-in Customer','Walk-in Customer',NULL,NULL,NULL,'On Counter','Bengaluru','Karnataka','29','560001',0,NULL)`
       );
       await conn.query(
-        `INSERT INTO customers (customer_code,name,company_name,gstin,phone,email,address_line1,city,state,state_code,pincode,opening_balance,credit_limit)
-         VALUES ('CUST-0002','Rajesh Sharma','Sharma Traders','29AACFS1234F1Z2','9876501234','rajesh@sharmatraders.in','Plot 21, Industrial Area','Mysuru','Karnataka','29','570001',0,50000)`
+        `INSERT INTO customers (customer_code,name,legal_name,company_name,gstin,phone,email,address_line1,city,state,state_code,pincode,opening_balance,credit_limit)
+         VALUES ('CUST-0002','Rajesh Sharma','Rajesh Sharma','Sharma Traders','29AACFS1234F1Z2','9876501234','rajesh@sharmatraders.in','Plot 21, Industrial Area','Mysuru','Karnataka','29','570001',0,50000)`
       );
       await conn.query(
-        `INSERT INTO customers (customer_code,name,company_name,gstin,phone,email,address_line1,city,state,state_code,pincode,opening_balance,credit_limit)
-         VALUES ('CUST-0003','Priya Enterprises','Priya Enterprises','33ABCDE9876G1Z3','9845012345','priya@priyaent.in','Door 5, Nehru Street','Pondicherry','Puducherry','34','605001',0,100000)`
+        `INSERT INTO customers (customer_code,name,legal_name,company_name,gstin,phone,email,address_line1,city,state,state_code,pincode,opening_balance,credit_limit)
+         VALUES ('CUST-0003','Priya Enterprises','Priya Enterprises','Priya Enterprises','33ABCDE9876G1Z3','9845012345','priya@priyaent.in','Door 5, Nehru Street','Pondicherry','Puducherry','34','605001',0,100000)`
       );
       console.log('Seeded demo customers.');
     }
@@ -201,8 +201,8 @@ async function seed() {
     const [vendCount] = await conn.query('SELECT COUNT(*) AS c FROM vendors');
     if (!CLEAN && vendCount[0].c === 0) {
       await conn.query(
-        `INSERT INTO vendors (vendor_code,name,gstin,phone,email,address_line1,city,state,state_code,pincode)
-         VALUES ('VEND-0001','Karnataka Wholesale Mart','29AAACW1234F1Z4','9900112233','sales@kwmart.in','Wholesale Market Road','Hubballi','Karnataka','29','580001')`
+        `INSERT INTO vendors (vendor_code,name,legal_name,gstin,phone,email,address_line1,city,state,state_code,pincode)
+         VALUES ('VEND-0001','Karnataka Wholesale Mart','Karnataka Wholesale Mart','29AAACW1234F1Z4','9900112233','sales@kwmart.in','Wholesale Market Road','Hubballi','Karnataka','29','580001')`
       );
       console.log('Seeded demo vendor.');
     }

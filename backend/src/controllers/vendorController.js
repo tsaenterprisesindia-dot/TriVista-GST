@@ -17,7 +17,7 @@ async function list(req, res, next) {
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const offset = (Number(page) - 1) * Number(limit);
     const [rows] = await pool.query(
-      `SELECT id,vendor_code,name,company_name,gstin,registration_category,tax_exempt,rcm_default,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,tds_rate,tds_threshold,is_active,created_at
+      `SELECT id,vendor_code,name,legal_name,company_name,gstin,registration_category,tax_exempt,rcm_default,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,tds_rate,tds_threshold,is_active,created_at
        FROM vendors ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
       [...params, Number(limit), offset]
     );
@@ -35,14 +35,15 @@ async function create(req, res, next) {
   try {
     const b = req.body || {};
     if (!b.name) return res.status(400).json({ error: 'Name is required.' });
+    if (!b.legal_name) return res.status(400).json({ error: 'Legal name is required.' });
     if (b.gstin && !isValidGstin(b.gstin)) return res.status(400).json({ error: 'Invalid GSTIN format.' });
     const pool = getPool();
     const [mx] = await pool.query('SELECT COALESCE(MAX(id),0) AS mx FROM vendors');
     const code = `VEND-${pad((mx[0].mx || 0) + 1, 4)}`;
     const [r] = await pool.query(
-      `INSERT INTO vendors (vendor_code,name,company_name,gstin,registration_category,tax_exempt,rcm_default,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,tds_rate,tds_threshold,is_active)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [code, b.name, b.company_name || null, b.gstin || null, cleanCat(b.registration_category), b.tax_exempt ? 1 : 0, b.rcm_default ? 1 : 0,
+      `INSERT INTO vendors (vendor_code,name,legal_name,company_name,gstin,registration_category,tax_exempt,rcm_default,pan,phone,email,address_line1,city,state,state_code,pincode,opening_balance,tds_rate,tds_threshold,is_active)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [code, b.name, b.legal_name, b.company_name || null, b.gstin || null, cleanCat(b.registration_category), b.tax_exempt ? 1 : 0, b.rcm_default ? 1 : 0,
        b.pan || null, b.phone || null, b.email || null, b.address_line1 || null, b.city || null, b.state || null,
        b.state_code || null, b.pincode || null, Number(b.opening_balance) || 0,
        b.tds_rate == null ? null : Number(b.tds_rate), b.tds_threshold == null ? null : Number(b.tds_threshold),
@@ -65,7 +66,7 @@ async function update(req, res, next) {
     }
     const [[exists]] = await getPool().query('SELECT id FROM vendors WHERE id=?', [id]);
     if (!exists) return res.status(404).json({ error: 'Vendor not found.' });
-    const fields = ['name','company_name','gstin','pan','phone','email','address_line1','city','state','state_code','pincode','opening_balance','is_active'];
+    const fields = ['name','legal_name','company_name','gstin','pan','phone','email','address_line1','city','state','state_code','pincode','opening_balance','is_active'];
     const sets = [];
     const params = [];
     for (const f of fields) {

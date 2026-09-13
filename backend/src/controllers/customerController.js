@@ -17,7 +17,7 @@ async function list(req, res, next) {
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const offset = (Number(page) - 1) * Number(limit);
     const [rows] = await pool.query(
-      `SELECT id,customer_code,name,company_name,gstin,registration_category,tax_exempt,pan,phone,email,address_line1,address_line2,city,state,state_code,pincode,opening_balance,outstanding_balance,credit_limit,tds_rate,tcs_rate,tds_threshold,tcs_threshold,is_active,created_at
+      `SELECT id,customer_code,name,legal_name,company_name,gstin,registration_category,tax_exempt,pan,phone,email,address_line1,address_line2,city,state,state_code,pincode,opening_balance,outstanding_balance,credit_limit,tds_rate,tcs_rate,tds_threshold,tcs_threshold,is_active,created_at
        FROM customers ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
       [...params, Number(limit), offset]
     );
@@ -56,10 +56,11 @@ const cleanCat = (v) => (CATEGORIES.includes(v) ? v : null);
 async function create(req, res, next) {
   try {
     const {
-      name, company_name, gstin, registration_category, tax_exempt, pan, phone, email, address_line1, address_line2,
+      name, legal_name, company_name, gstin, registration_category, tax_exempt, pan, phone, email, address_line1, address_line2,
       city, state, state_code, pincode, opening_balance, credit_limit, tds_rate, tcs_rate, tds_threshold, tcs_threshold, is_active,
     } = req.body || {};
     if (!name) return res.status(400).json({ error: 'Name is required.' });
+    if (!legal_name) return res.status(400).json({ error: 'Legal name is required.' });
     if (gstin && !isValidGstin(gstin)) {
       return res.status(400).json({ error: 'Invalid GSTIN format.' });
     }
@@ -71,10 +72,10 @@ async function create(req, res, next) {
     const customer_code = await nextCode(pool);
     const [r] = await pool.query(
       `INSERT INTO customers
-       (customer_code,name,company_name,gstin,registration_category,tax_exempt,pan,phone,email,address_line1,address_line2,state,state_code,city,pincode,opening_balance,credit_limit,tds_rate,tcs_rate,tds_threshold,tcs_threshold,is_active,created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (customer_code,name,legal_name,company_name,gstin,registration_category,tax_exempt,pan,phone,email,address_line1,address_line2,state,state_code,city,pincode,opening_balance,credit_limit,tds_rate,tcs_rate,tds_threshold,tcs_threshold,is_active,created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        customer_code, name, company_name || null, gstin || null, cleanCat(registration_category), tax_exempt ? 1 : 0,
+        customer_code, name, legal_name, company_name || null, gstin || null, cleanCat(registration_category), tax_exempt ? 1 : 0,
         pan || null, phone || null, email || null, address_line1 || null, address_line2 || null, state || null,
         state_code || null, city || null, pincode || null, Number(opening_balance) || 0, credit_limit || null,
         tds_rate == null ? null : Number(tds_rate), tcs_rate == null ? null : Number(tcs_rate),
@@ -82,7 +83,7 @@ async function create(req, res, next) {
         is_active === undefined ? 1 : is_active ? 1 : 0, req.user.id,
       ]
     );
-    await audit(req, 'CREATE', 'customer', r.insertId, { name, gstin: gstin || null, registration_category: cleanCat(registration_category) });
+    await audit(req, 'CREATE', 'customer', r.insertId, { name, legal_name, gstin: gstin || null, registration_category: cleanCat(registration_category) });
     res.status(201).json({ id: r.insertId, customer_code, message: 'Customer created.' });
   } catch (e) {
     next(e);
@@ -97,7 +98,7 @@ async function update(req, res, next) {
       return res.status(400).json({ error: 'Invalid GSTIN format.' });
     }
     const pool = getPool();
-    const fields = ['name','company_name','gstin','pan','phone','email','address_line1','address_line2','state','state_code','city','pincode','credit_limit'];
+    const fields = ['name','legal_name','company_name','gstin','pan','phone','email','address_line1','address_line2','state','state_code','city','pincode','credit_limit'];
     const sets = [];
     const params = [];
     for (const f of fields) {

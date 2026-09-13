@@ -35,7 +35,7 @@ async function posSale(req, res, next) {
       if (!walk.length) {
         // create walk-in on the fly
         const [ins] = await conn.query(
-          `INSERT INTO customers (customer_code,name) VALUES ('CUST-0001','Walk-in Customer')`
+          `INSERT INTO customers (customer_code,name,legal_name) VALUES ('CUST-0001','Walk-in Customer','Walk-in Customer')`
         );
         const [c] = await conn.query('SELECT * FROM customers WHERE id=?', [ins.insertId]);
         customer = c[0];

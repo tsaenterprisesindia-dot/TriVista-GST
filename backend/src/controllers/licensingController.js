@@ -494,10 +494,10 @@ async function invoice(req, res, next) {
       const gstinOk = lic.gstin && isValidGstin(lic.gstin) ? lic.gstin : null;
       const [cr] = await conn.query(
         `INSERT INTO customers
-         (customer_code,name,company_name,gstin,phone,email,state_code,is_active,created_by)
-         VALUES (?,?,?,?,?,?,?,1,?)`,
+         (customer_code,name,legal_name,company_name,gstin,phone,email,state_code,is_active,created_by)
+         VALUES (?,?,?,?,?,?,?,?,1,?)`,
         [
-          customer_code, lic.client_name, lic.client_name, gstinOk || null,
+          customer_code, lic.client_name, lic.client_name, lic.client_name, gstinOk || null,
           lic.phone || null, lic.email || null, gstinOk ? gstinOk.slice(0, 2) : null,
           req.user.id,
         ]

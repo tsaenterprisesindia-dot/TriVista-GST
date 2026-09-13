@@ -2,8 +2,8 @@ import { useRef, useState } from 'react';
 import { api } from '../api/client';
 
 const COLS = {
-  customers: 'name, company_name, gstin, pan, phone, email, address_line1, address_line2, city, state, state_code, pincode, opening_balance, credit_limit, is_active',
-  vendors: 'name, company_name, gstin, pan, phone, email, address_line1, city, state, state_code, pincode, opening_balance',
+  customers: 'name, legal_name, trade_name, gstin, pan, phone, email, address_line1, address_line2, city, state, state_code, pincode, opening_balance, credit_limit, is_active',
+  vendors: 'name, legal_name, trade_name, gstin, pan, phone, email, address_line1, city, state, state_code, pincode, opening_balance',
   products: 'name, sku, barcode, description, category_name, hsn_code, gst_rate, unit, selling_price, wholesale_price, purchase_price, mrp, min_stock, opening_stock, is_service',
   hsn: 'code, description, type, gst_rate',
 };
