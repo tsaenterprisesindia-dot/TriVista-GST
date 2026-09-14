@@ -6,6 +6,7 @@ const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
+const lots = require('../utils/lots');
 
 /**
  * Create a GST invoice with full tax computation.
@@ -69,6 +70,7 @@ async function createInvoiceCore(conn, user, b) {
 
   let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
   const itemRows = [];
+  const saleMoveIds = [];
 
   for (const it of b.items) {
     const qty = Number(it.quantity) || 1;
@@ -118,27 +120,39 @@ async function createInvoiceCore(conn, user, b) {
 
     // Stock handling: OUT on sale, IN (restock) on credit notes. Services are skipped.
     if (it.product_id) {
-      const [p] = await conn.query('SELECT is_service FROM products WHERE id=?', [it.product_id]);
-      if (p.length && !p[0].is_service) {
-        const [stk] = await conn.query(
-          `SELECT IFNULL(SUM(CASE WHEN type='IN' THEN quantity WHEN type='OUT' THEN -quantity ELSE quantity END),0) AS stock
-           FROM stock_movements WHERE product_id=?`,
-          [it.product_id]
-        );
-        if (Number(stk[0].stock) < qty) {
-          throw Object.assign(new Error(`Insufficient stock for "${it.item_name}". Only ${stk[0].stock} available.`), { status: 400 });
+      const [p] = await conn.query('SELECT is_service, track_batch, track_serial FROM products WHERE id=?', [it.product_id]);
+      if (p.length) {
+        const track = { track_batch: p[0].track_batch, track_serial: p[0].track_serial };
+        if (p[0].is_service) {
+          if (isCreditDoc) {
+            await lots.recordIn(conn, {
+              product_id: it.product_id, qty, unit_cost: null,
+              note: `Credit note ${invoiceNumber} restock`, created_by: user.id,
+              reference_type: 'credit_note', reference_id: null, track,
+            });
+          }
+        } else if (isCreditDoc) {
+          let batchId = null;
+          if (it.batch_no || p[0].track_batch) {
+            batchId = await lots.getOrCreateLot(conn, {
+              product_id: it.product_id, batch_no: it.batch_no || `RESTOCK-${String(invoiceNumber).slice(-6)}`,
+              expiry_date: it.expiry_date, mfg_date: it.mfg_date, created_by: user.id,
+            });
+          }
+          await lots.recordIn(conn, {
+            product_id: it.product_id, qty, unit_cost: null,
+            note: `Credit note ${invoiceNumber} restock`, created_by: user.id,
+            reference_type: 'credit_note', reference_id: null,
+            track: { ...track, batch_id: batchId, serial_numbers: it.serial_numbers },
+          });
+        } else {
+          const inserted = await lots.issueForSale(conn, {
+            product_id: it.product_id, qty,
+            note: `Invoice ${invoiceNumber}`, created_by: user.id,
+            reference_type: 'invoice', reference_id: null,
+          });
+          saleMoveIds.push(...inserted.map((m) => m.id));
         }
-        await conn.query(
-          `INSERT INTO stock_movements (product_id,type,quantity,note,created_by)
-           VALUES (?,'OUT',?,?,?)`,
-          [it.product_id, qty, `Invoice ${invoiceNumber}`, user.id]
-        );
-      } else if (isCreditDoc) {
-        await conn.query(
-          `INSERT INTO stock_movements (product_id,type,quantity,note,created_by)
-           VALUES (?,'IN',?,?,?)`,
-          [it.product_id, qty, `Credit note ${invoiceNumber} restock`, user.id]
-        );
       }
     }
   }
@@ -194,6 +208,11 @@ async function createInvoiceCore(conn, user, b) {
     ]
   );
   const invoiceId = ins.insertId;
+
+  if (saleMoveIds.length) {
+    const ph = saleMoveIds.map(() => '?').join(',');
+    await conn.query(`UPDATE stock_movements SET reference_id=? WHERE id IN (${ph})`, [invoiceId, ...saleMoveIds]);
+  }
 
   for (const it of itemRows) {
     await conn.query(
@@ -447,16 +466,13 @@ async function cancel(req, res, next) {
       }
     }
 
-    // Restore stock
-    const [items] = await conn.query('SELECT product_id, quantity FROM invoice_items WHERE invoice_id=?', [invoiceId]);
-    for (const it of items) {
-      if (it.product_id) {
-        await conn.query(
-          `INSERT INTO stock_movements (product_id,type,quantity,note,created_by)
-           VALUES (?,'IN',?,'Cancelled invoice restore',?)`,
-          [it.product_id, it.quantity, req.user.id]
-        );
-      }
+    // Restore stock (returned lines go back to their exact lots, serials intact)
+    let restored = await lots.restoreForCancelledInvoice(conn, {
+      reference_id: invoiceId, created_by: req.user.id,
+    });
+    if (!restored) {
+      // Legacy invoices created before movement-referencing: line-level fallback.
+      restored = await lots.restoreLegacy(conn, { invoice_id: invoiceId, created_by: req.user.id });
     }
     const notes = invoice.notes ? `${invoice.notes}\nCANCELLED: ${reason}` : `CANCELLED: ${reason}`;
     await conn.query(

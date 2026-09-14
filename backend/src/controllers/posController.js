@@ -5,6 +5,7 @@ const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
+const lots = require('../utils/lots');
 
 /**
  * Sell from POS: creates a paid invoice, deducts stock, returns invoice details.
@@ -50,6 +51,7 @@ async function posSale(req, res, next) {
     const invoiceNumber = await allocateInvoiceNumber(conn, branch, new Date().toISOString().slice(0, 10));
 
     let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
+    const saleMoveIds = [];
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;
@@ -71,21 +73,14 @@ async function posSale(req, res, next) {
       grandTotal += taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess;
 
       if (it.product_id) {
-        const [p] = await conn.query('SELECT is_service FROM products WHERE id=?', [it.product_id]);
+        const [p] = await conn.query('SELECT is_service, track_batch, track_serial FROM products WHERE id=?', [it.product_id]);
         if (p.length && !p[0].is_service) {
-          const [stk] = await conn.query(
-            `SELECT IFNULL(SUM(CASE WHEN type='IN' THEN quantity WHEN type='OUT' THEN -quantity ELSE quantity END),0) AS stock
-             FROM stock_movements WHERE product_id=?`,
-            [it.product_id]
-          );
-          if (Number(stk[0].stock) < qty) {
-            throw Object.assign(new Error(`Insufficient stock for "${it.item_name}". Only ${stk[0].stock} available.`), { status: 400 });
-          }
-          await conn.query(
-            `INSERT INTO stock_movements (product_id,type,quantity,note,created_by)
-             VALUES (?,'OUT',?,'POS ${invoiceNumber}',?)`,
-            [it.product_id, qty, req.user.id]
-          );
+          const inserted = await lots.issueForSale(conn, {
+            product_id: it.product_id, qty,
+            note: `POS ${invoiceNumber}`, created_by: req.user.id,
+            reference_type: 'pos', reference_id: null,
+          });
+          saleMoveIds.push(...inserted.map((m) => m.id));
         }
       }
     }
@@ -120,6 +115,11 @@ async function posSale(req, res, next) {
       ]
     );
     const invoiceId = ins.insertId;
+
+    if (saleMoveIds.length) {
+      const ph = saleMoveIds.map(() => '?').join(',');
+      await conn.query(`UPDATE stock_movements SET reference_id=? WHERE id IN (${ph})`, [invoiceId, ...saleMoveIds]);
+    }
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;

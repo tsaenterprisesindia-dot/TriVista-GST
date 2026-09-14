@@ -1,5 +1,6 @@
 const { getPool } = require('../db');
 const { audit } = require('../utils/audit');
+const lots = require('../utils/lots');
 
 // ------------- Categories -------------
 async function listCategories(_req, res, next) {
@@ -54,7 +55,7 @@ async function list(req, res, next) {
     const [rows] = await pool.query(
       `SELECT p.id,p.sku,p.barcode,p.name,p.description,p.category_id,c.name AS category_name,
               p.hsn_code,p.hsn_id,p.gst_rate,p.unit,p.selling_price,p.wholesale_price,p.purchase_price,p.mrp,p.min_stock,
-              p.weight_kg,p.is_service,p.is_active,p.created_at,
+              p.track_batch,p.track_serial,p.weight_kg,p.is_service,p.is_active,p.created_at,
               IFNULL((SELECT SUM(
                  CASE WHEN sm.type='IN' THEN sm.quantity
                       WHEN sm.type='OUT' THEN -sm.quantity
@@ -114,22 +115,29 @@ async function create(req, res, next) {
     const [r] = await pool.query(
       `INSERT INTO products
        (sku,barcode,name,description,category_id,hsn_id,hsn_code,gst_rate,unit,
-        selling_price,wholesale_price,purchase_price,mrp,min_stock,weight_kg,is_service,is_active)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        selling_price,wholesale_price,purchase_price,mrp,min_stock,track_batch,track_serial,weight_kg,is_service,is_active)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         b.sku || null, b.barcode || null, b.name, b.description || null, b.category_id || null, hsnId,
         b.hsn_code, Number(b.gst_rate) || 0, b.unit || 'PCS',
         Number(b.selling_price) || 0, b.wholesale_price || null, b.purchase_price ?? null, b.mrp || null,
-        b.min_stock || null, b.weight_kg || null, b.is_service ? 1 : 0, b.is_active === undefined ? 1 : b.is_active ? 1 : 0,
+        b.min_stock || null, b.track_batch ? 1 : 0, b.track_serial ? 1 : 0, b.weight_kg || null, b.is_service ? 1 : 0, b.is_active === undefined ? 1 : b.is_active ? 1 : 0,
       ]
     );
-    // Opening stock movement
+    // Opening stock movement (with batch lot when provided)
     const opening = Number(b.opening_stock) || 0;
     if (opening > 0 && !b.is_service) {
+      let batchId = null;
+      if (b.batch_no || b.track_batch) {
+        batchId = await lots.getOrCreateLot(pool, {
+          product_id: r.insertId, batch_no: b.batch_no || `${r.insertId}-OB`,
+          expiry_date: b.expiry_date, mfg_date: b.mfg_date, created_by: req.user.id,
+        });
+      }
       await pool.query(
-        `INSERT INTO stock_movements (product_id,type,quantity,unit_cost,note,created_by)
-         VALUES (?,'IN',?,?,'Opening stock',?)`,
-        [r.insertId, opening, Number(b.purchase_price) || 0, req.user.id]
+        `INSERT INTO stock_movements (product_id,type,quantity,unit_cost,batch_id,serial_numbers,reference_type,note,created_by)
+         VALUES (?,'IN',?,?,?,?,'opening','Opening stock',?)`,
+        [r.insertId, opening, Number(b.purchase_price) || 0, batchId, b.serial_numbers || null, req.user.id]
       );
     }
     res.status(201).json({ id: r.insertId, message: 'Product created.', hsnId });
@@ -144,7 +152,7 @@ async function update(req, res, next) {
     const id = Number(req.params.id);
     const b = req.body || {};
     const pool = getPool();
-    const allowed = ['sku','barcode','name','description','category_id','hsn_id','hsn_code','gst_rate','unit','selling_price','wholesale_price','purchase_price','mrp','min_stock','weight_kg','is_service','is_active'];
+    const allowed = ['sku','barcode','name','description','category_id','hsn_id','hsn_code','gst_rate','unit','selling_price','wholesale_price','purchase_price','mrp','min_stock','track_batch','track_serial','weight_kg','is_service','is_active'];
     const sets = [];
     const params = [];
     for (const f of allowed) {

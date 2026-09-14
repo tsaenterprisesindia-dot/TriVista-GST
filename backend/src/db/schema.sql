@@ -189,6 +189,8 @@ CREATE TABLE `products` (
   `purchase_price` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `mrp` DECIMAL(14,2) DEFAULT NULL,
   `min_stock` DECIMAL(14,2) DEFAULT NULL,
+  `track_batch` TINYINT(1) NOT NULL DEFAULT 0,
+  `track_serial` TINYINT(1) NOT NULL DEFAULT 0,
   `weight_kg` DECIMAL(10,3) DEFAULT NULL,
   `is_service` TINYINT(1) NOT NULL DEFAULT 0,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
@@ -211,6 +213,8 @@ CREATE TABLE `stock_movements` (
   `type` ENUM('IN','OUT','ADJUST') NOT NULL,
   `quantity` DECIMAL(14,2) NOT NULL,
   `unit_cost` DECIMAL(14,2) DEFAULT NULL,
+  `batch_id` INT UNSIGNED DEFAULT NULL,
+  `serial_numbers` TEXT DEFAULT NULL,
   `reference_type` VARCHAR(40) DEFAULT NULL,
   `reference_id` INT UNSIGNED DEFAULT NULL,
   `note` VARCHAR(255) DEFAULT NULL,
@@ -218,7 +222,27 @@ CREATE TABLE `stock_movements` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_stock_product` (`product_id`),
-  CONSTRAINT `fk_stock_product` FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE
+  KEY `idx_movement_batch` (`batch_id`),
+  KEY `idx_stock_reference` (`reference_type`,`reference_id`),
+  CONSTRAINT `fk_stock_product` FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_movement_batch` FOREIGN KEY (`batch_id`) REFERENCES `lot_batches`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Lot batches (batch/expiry/serial tracking across stock)
+-- ------------------------------------------------------------
+CREATE TABLE `lot_batches` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `product_id` INT UNSIGNED NOT NULL,
+  `batch_no` VARCHAR(80) NOT NULL,
+  `mfg_date` DATE DEFAULT NULL,
+  `expiry_date` DATE DEFAULT NULL,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_lot_product_batch` (`product_id`,`batch_no`),
+  KEY `idx_lot_expiry` (`expiry_date`),
+  CONSTRAINT `fk_lot_product` FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

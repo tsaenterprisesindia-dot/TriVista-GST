@@ -4,6 +4,7 @@ const { pad } = require('../utils/helpers');
 const { computeTds } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
+const lots = require('../utils/lots');
 
 /**
  * Create a Purchase Bill (inward supply). Increases stock, records GST input.
@@ -41,6 +42,7 @@ async function createPurchase(req, res, next) {
     const billNumber = `PB-${pad((mx[0].mx || 0) + 1, 6)}`;
 
     let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
+    const purchaseMoveIds = [];
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;
@@ -61,15 +63,27 @@ async function createPurchase(req, res, next) {
       taxTotal += tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess;
       grandTotal += taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess;
 
-      // Stock IN for products (goods purchased)
+      // Stock IN for products (goods purchased), with batch/expiry/serial capture
       if (it.product_id) {
-        const [p] = await conn.query('SELECT is_service FROM products WHERE id=?', [it.product_id]);
+        const [p] = await conn.query('SELECT is_service, track_batch, track_serial FROM products WHERE id=?', [it.product_id]);
         if (p.length && !p[0].is_service) {
-          await conn.query(
-            `INSERT INTO stock_movements (product_id,type,quantity,unit_cost,note,created_by)
-             VALUES (?,'IN',?,?,?,?)`,
-            [it.product_id, qty, rate, `Purchase ${billNumber}`, req.user.id]
-          );
+          let batchId = null;
+          if (it.batch_no || p[0].track_batch) {
+            if (p[0].track_batch && !it.batch_no) {
+              throw Object.assign(new Error(`Product "${it.item_name}" is batch-tracked — provide a batch number.`), { status: 400 });
+            }
+            batchId = await lots.getOrCreateLot(conn, {
+              product_id: it.product_id, batch_no: it.batch_no,
+              expiry_date: it.expiry_date, mfg_date: it.mfg_date, created_by: req.user.id,
+            });
+          }
+          const mid = await lots.recordIn(conn, {
+            product_id: it.product_id, qty, unit_cost: rate,
+            note: `Purchase ${billNumber}`, created_by: req.user.id,
+            reference_type: 'purchase', reference_id: null,
+            track: { track_batch: p[0].track_batch, track_serial: p[0].track_serial, batch_id: batchId, serial_numbers: it.serial_numbers },
+          });
+          purchaseMoveIds.push(mid);
         }
       } else if (it.item_name) {
         const [ins] = await conn.query(
@@ -77,11 +91,20 @@ async function createPurchase(req, res, next) {
            VALUES (?,?,?,?,?,?,0)`,
           [it.item_name, it.hsn_code || null, gstRate, it.unit || 'PCS', rate, rate]
         );
-        await conn.query(
-          `INSERT INTO stock_movements (product_id,type,quantity,unit_cost,note,created_by)
-           VALUES (?,'IN',?,?,?,?)`,
-          [ins.insertId, qty, rate, `Purchase ${billNumber}`, req.user.id]
-        );
+        let batchId = null;
+        if (it.batch_no) {
+          batchId = await lots.getOrCreateLot(conn, {
+            product_id: ins.insertId, batch_no: it.batch_no,
+            expiry_date: it.expiry_date, mfg_date: it.mfg_date, created_by: req.user.id,
+          });
+        }
+        const mid = await lots.recordIn(conn, {
+          product_id: ins.insertId, qty, unit_cost: rate,
+          note: `Purchase ${billNumber}`, created_by: req.user.id,
+          reference_type: 'purchase', reference_id: null,
+          track: { track_batch: 0, track_serial: 0, batch_id: batchId, serial_numbers: it.serial_numbers },
+        });
+        purchaseMoveIds.push(mid);
       }
     }
 
@@ -104,6 +127,11 @@ async function createPurchase(req, res, next) {
       ]
     );
     const billId = ins.insertId;
+
+    if (purchaseMoveIds.length) {
+      const ph = purchaseMoveIds.map(() => '?').join(',');
+      await conn.query(`UPDATE stock_movements SET reference_id=? WHERE id IN (${ph})`, [billId, ...purchaseMoveIds]);
+    }
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;

@@ -90,6 +90,27 @@ async function syncAlerts(pool) {
     );
   }
 
+  // --- Expiring / expired batch stock
+  const [expiryRows] = await pool.query(
+    `SELECT l.id, p.name, l.batch_no, l.expiry_date, DATEDIFF(l.expiry_date, CURDATE()) AS days, q.qty AS on_hand FROM
+     (SELECT sm.batch_id, SUM(CASE WHEN sm.type='IN' THEN sm.quantity WHEN sm.type='OUT' THEN -sm.quantity ELSE sm.quantity END) AS qty
+      FROM stock_movements sm WHERE sm.batch_id IS NOT NULL GROUP BY sm.batch_id) q
+     JOIN lot_batches l ON l.id=q.batch_id
+     JOIN products p ON p.id=l.product_id
+     WHERE q.qty > 0 AND l.expiry_date IS NOT NULL
+       AND l.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+     ORDER BY l.expiry_date ASC LIMIT 15`
+  );
+  for (const r of expiryRows) {
+    const expired = Number(r.days) < 0;
+    await insert(
+      expired ? 'stock_expired' : 'expiry_soon', r.id,
+      `${expired ? 'Expired stock' : 'Expiring soon'}: ${r.name} (${r.batch_no})`,
+      `Batch ${r.batch_no}: ${round2(r.on_hand)} left, expires ${r.expiry_date} (${r.days} day(s)).`,
+      expired ? 'important' : 'warning', '/inventory'
+    );
+  }
+
   // --- E-invoicing compliance: invoices without IRN.
   // Reporting to the IRP must happen within 30 days of generation for
   // AATO >₹10cr (5cr for historic periods); flag anything older than 5 days.

@@ -7,7 +7,7 @@ const inr = (n) =>
 
 const ABS = ['Purchase Bills', 'Journal', 'Ledger', 'Trial Balance', 'P&L', 'Balance Sheet', 'Cash & Bank', 'Day Book', 'Chart of Accounts'];
 
-const lineEmpty = () => ({ product_id: '', item_name: '', quantity: 1, unit_price: '', gst_rate: '', discount: 0 });
+const lineEmpty = () => ({ product_id: '', item_name: '', quantity: 1, unit_price: '', gst_rate: '', discount: 0, batch_no: '', expiry_date: '', serial_numbers: '' });
 const jLineEmpty = () => ({ account_id: '', debit: '', credit: '' });
 const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
 
@@ -333,6 +333,18 @@ export default function Accounting() {
                     <div className="field">
                       <label>Discount</label>
                       <input type="number" step="0.01" value={it.discount} onChange={setItem(i, 'discount')} />
+                    </div>
+                    <div className="field">
+                      <label>Batch No</label>
+                      <input value={it.batch_no || ''} onChange={setItem(i, 'batch_no')} placeholder="optional (FIFO + expiry)" />
+                    </div>
+                    <div className="field">
+                      <label>Expiry Date</label>
+                      <input type="date" value={it.expiry_date || ''} onChange={setItem(i, 'expiry_date')} />
+                    </div>
+                    <div className="field">
+                      <label>Serial Numbers</label>
+                      <input value={it.serial_numbers || ''} onChange={setItem(i, 'serial_numbers')} placeholder="comma separated for serialised" />
                     </div>
                     <div className="field">
                       <button type="button" className="btn btn-sm btn-danger" onClick={() => dropItem(i)}>Remove</button>

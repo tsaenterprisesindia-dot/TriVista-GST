@@ -19,6 +19,8 @@ const empty = {
   purchase_price: '',
   mrp: '',
   min_stock: '',
+  track_batch: false,
+  track_serial: false,
   weight_kg: '',
   is_service: false,
   opening_stock: '',
@@ -99,6 +101,8 @@ export default function Products() {
       purchase_price: p.purchase_price,
       mrp: p.mrp,
       min_stock: p.min_stock,
+      track_batch: !!p.track_batch,
+      track_serial: !!p.track_serial,
       weight_kg: p.weight_kg,
       is_service: !!p.is_service,
     });
@@ -239,6 +243,20 @@ export default function Products() {
                   <input type="checkbox" checked={form.is_service} onChange={set('is_service')} style={{ width: 'auto' }} />{' '}
                   Is Service
                 </label>
+              </div>
+              <div className="field">
+                <label>
+                  <input type="checkbox" checked={form.track_batch} onChange={set('track_batch')} style={{ width: 'auto' }} />{' '}
+                  Batch / Expiry tracking
+                </label>
+                <div className="muted" style={{ fontSize: 12 }}>Stock is issued FIFO by expiry date; expiring &amp; expired lots get alerts.</div>
+              </div>
+              <div className="field">
+                <label>
+                  <input type="checkbox" checked={form.track_serial} onChange={set('track_serial')} style={{ width: 'auto' }} />{' '}
+                  Serial number tracking
+                </label>
+                <div className="muted" style={{ fontSize: 12 }}>Requires batch tracking. One serial per unit on receipt; serials are assigned to sales automatically.</div>
               </div>
             </div>
             <div className="flex">
