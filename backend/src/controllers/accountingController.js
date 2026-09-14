@@ -2,6 +2,7 @@ const { getPool } = require('../db');
 const { splitGst, round2 } = require('../utils/gst');
 const { pad } = require('../utils/helpers');
 const { computeTds } = require('../utils/tds');
+const { resolveRateForDate } = require('../utils/rateHistory');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
@@ -32,6 +33,7 @@ async function createPurchase(req, res, next) {
 
     const placeOfSupply = b.place_of_supply || vendor.state_code || companyState;
     const isInterstate = String(placeOfSupply) !== String(companyState);
+    const billDate = b.bill_date || new Date().toISOString().slice(0, 10);
     // Reverse Charge (RCM): auto on for unregistered vendors, or when the vendor
 // master marks rcm_default (e.g. certain notified services). Explicit body flag wins.
     const isRcm = b.is_rcm !== undefined
@@ -44,12 +46,20 @@ async function createPurchase(req, res, next) {
 
     let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
     const purchaseMoveIds = [];
+    let itemRates = [];
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.unit_price) || 0;
       const disc = Number(it.discount) || 0;
-      const gstRate = Number(it.gst_rate) || 0;
+      // Effective-dated rate for the HSN/SAC on the bill date.
+      const resolved = await resolveRateForDate(conn, {
+        hsnCode: it.hsn_code,
+        date: billDate,
+        fallbackRate: Number(it.gst_rate) || 0,
+      });
+      const gstRate = resolved.gst_rate;
+      itemRates.push(gstRate);
       const gross = qty * rate;
       const taxableValue = gross - disc;
       const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
@@ -111,7 +121,7 @@ async function createPurchase(req, res, next) {
 
     // TDS u/s 194Q on the FY-cumulative purchase value above the threshold
     const tdsAmount = await computeTds(
-      conn, vendor.id, b.bill_date || new Date().toISOString().slice(0, 10),
+      conn, vendor.id, billDate,
       round2(subtotal - discountTotal), 0, company
     );
 
@@ -134,11 +144,11 @@ async function createPurchase(req, res, next) {
       await conn.query(`UPDATE stock_movements SET reference_id=? WHERE id IN (${ph})`, [billId, ...purchaseMoveIds]);
     }
 
-    for (const it of b.items) {
+    for (const [idx, it] of b.items.entries()) {
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.unit_price) || 0;
       const disc = Number(it.discount) || 0;
-      const gstRate = Number(it.gst_rate) || 0;
+      const gstRate = itemRates[idx] || Number(it.gst_rate) || 0;
       const taxableValue = qty * rate - disc;
       const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
       const pid = it.product_id || (
@@ -157,7 +167,6 @@ async function createPurchase(req, res, next) {
 
     // Payment if included
     let paidAmount = 0;
-    const billDate = b.bill_date || new Date().toISOString().slice(0, 10);
     const parsedPay = payments.parsePayments(b, { defaultMode: 'BANK' });
     if (parsedPay.legs.length) {
       const capped = payments.capLegs(parsedPay.legs, round2(grandTotal));

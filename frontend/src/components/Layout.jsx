@@ -24,6 +24,7 @@ const allNavItems = [
   { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true },
   { to: '/audit', label: 'Audit Log', hl: true },
   { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
+  { to: '/tax-rates', label: 'GST Rates', hl: true },
   { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true },
   { to: '/support', label: 'Support & Feedback' },
   { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true },

@@ -1,6 +1,7 @@
 const { getPool } = require('../db');
 const { isValidGstin } = require('../utils/gst');
 const { pad } = require('../utils/helpers');
+const { applyRateChange } = require('../utils/rateHistory');
 const { audit } = require('../utils/audit');
 
 async function bulk(req, res, next) {
@@ -113,9 +114,21 @@ async function bulk(req, res, next) {
           const code = String(r.code || r.hsn_code || '').trim();
           if (!code) throw new Error('code is required.');
           const rate = Number(r.gst_rate) || 0;
-          const [dup] = await pool.query('SELECT id FROM hsn_sac_codes WHERE code=?', [code]);
+          const [dup] = await pool.query('SELECT id, gst_rate, description FROM hsn_sac_codes WHERE code=?', [code]);
           let hsnId;
           if (dup.length) {
+            const rateChanged = Math.abs(Number(dup[0].gst_rate) - rate) > 0.001;
+            // A rate change via import is also an effective-dated change.
+            if (rateChanged) {
+              await applyRateChange(pool, {
+                code,
+                effectiveFrom: new Date().toISOString().slice(0, 10),
+                gstRate: rate,
+                source: 'CSV import',
+                notes: dup[0].description || null,
+                createdBy: req.user.id,
+              });
+            }
             await pool.query(
               `UPDATE hsn_sac_codes SET description=COALESCE(?,description), type=COALESCE(?,type),
                 gst_rate=?, cgst_rate=?, sgst_rate=?, igst_rate=? WHERE id=?`,

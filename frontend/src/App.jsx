@@ -22,6 +22,7 @@ import AIAssistant from './pages/AIAssistant';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 import CompanySettings from './pages/CompanySettings';
+import TaxRates from './pages/TaxRates';
 import Users from './pages/Users';
 import SupportCenter from './pages/SupportCenter';
 import Licensing from './pages/Licensing';
@@ -73,6 +74,7 @@ function App() {
         <Route path="api-keys" element={<ApiKeys />} />
         <Route path="audit" element={<Audit />} />
         <Route path="settings" element={<CompanySettings />} />
+        <Route path="tax-rates" element={<TaxRates />} />
         <Route path="users" element={<Users />} />
         <Route path="support" element={<SupportCenter />} />
         <Route path="licensing" element={<Licensing />} />

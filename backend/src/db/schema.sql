@@ -159,6 +159,31 @@ CREATE TABLE `hsn_sac_codes` (
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
+-- HSN / SAC rate history (effective-dated tax rates)
+-- One row per statutory rate regime; effective_to NULL = in force.
+-- Invoice lines snapshot their rate, so past invoices are never rewound.
+-- ------------------------------------------------------------
+CREATE TABLE `hsn_sac_rate_history` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `hsn_sac_id` INT UNSIGNED NOT NULL,
+  `gst_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `cgst_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `sgst_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `igst_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `cess_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `effective_from` DATE NOT NULL,
+  `effective_to` DATE DEFAULT NULL,
+  `source` VARCHAR(80) DEFAULT NULL,
+  `notes` VARCHAR(255) DEFAULT NULL,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_rate_hsn` (`hsn_sac_id`),
+  KEY `idx_rate_dates` (`effective_from`,`effective_to`),
+  CONSTRAINT `fk_rate_hsn` FOREIGN KEY (`hsn_sac_id`) REFERENCES `hsn_sac_codes`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
 -- Product Categories
 -- ------------------------------------------------------------
 CREATE TABLE `categories` (

@@ -4,6 +4,7 @@ const { localDateStr } = require('../utils/helpers');
 const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
 const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
+const { resolveRateForDate } = require('../utils/rateHistory');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
@@ -77,7 +78,15 @@ async function createInvoiceCore(conn, user, b) {
     const qty = Number(it.quantity) || 1;
     const rate = Number(it.unit_price) || 0;
     const disc = Number(it.discount) || 0;
-    let gstRate = Number(it.gst_rate) || 0;
+    // Effective-dated rate: resolve the statutory GST rate for the HSN/SAC on
+    // the invoice date (never hard-coded). Client-supplied rate is only the
+    // fallback for manual lines without a resolvable HSN.
+    const resolved = await resolveRateForDate(conn, {
+      hsnCode: it.hsn_code,
+      date: invDate,
+      fallbackRate: Number(it.gst_rate) || 0,
+    });
+    let gstRate = resolved.gst_rate;
     const gross = qty * rate;
     let taxableValue = gross - disc;
     // Nil/exempt documents carry no tax (portal reports taxable position separately).

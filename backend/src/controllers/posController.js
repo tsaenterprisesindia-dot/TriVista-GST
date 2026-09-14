@@ -3,6 +3,7 @@ const { splitGst, round2 } = require('../utils/gst');
 const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
 const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
+const { resolveRateForDate } = require('../utils/rateHistory');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
@@ -50,15 +51,24 @@ async function posSale(req, res, next) {
     const isInterstate = String(placeOfSupply) !== String(companyState);
 
     const invoiceNumber = await allocateInvoiceNumber(conn, branch, new Date().toISOString().slice(0, 10));
+    const todayIso = new Date().toISOString().slice(0, 10);
 
     let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
     const saleMoveIds = [];
+    const itemRates = [];
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.unit_price) || 0;
       const disc = Number(it.discount) || 0;
-      const gstRate = Number(it.gst_rate) || 0;
+      // Effective-dated rate for the HSN/SAC on the sale date.
+      const resolved = await resolveRateForDate(conn, {
+        hsnCode: it.hsn_code,
+        date: todayIso,
+        fallbackRate: Number(it.gst_rate) || 0,
+      });
+      const gstRate = resolved.gst_rate;
+      itemRates.push(gstRate);
       const gross = qty * rate;
       const taxableValue = gross - disc;
       const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
@@ -139,11 +149,11 @@ async function posSale(req, res, next) {
       await conn.query(`UPDATE stock_movements SET reference_id=? WHERE id IN (${ph})`, [invoiceId, ...saleMoveIds]);
     }
 
-    for (const it of b.items) {
+    for (const [idx, it] of b.items.entries()) {
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.unit_price) || 0;
       const disc = Number(it.discount) || 0;
-      const gstRate = Number(it.gst_rate) || 0;
+      const gstRate = itemRates[idx] || Number(it.gst_rate) || 0;
       const taxableValue = qty * rate - disc;
       const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
       await conn.query(
