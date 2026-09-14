@@ -6,7 +6,7 @@ const keys = [
   { k: 'Enter', d: 'Add the highlighted product to the cart. A barcode/SKU scanner works like typing + Enter' },
   { k: '↑ ↓', d: 'Move the product highlight up/down (start at F2 / search box)' },
   { k: '+ / −', d: 'Increase / decrease quantity of the last cart line (page not focused on an input)' },
-  { k: 'F3', d: 'Toggle retail ↔ wholesale pricing for new lines' },
+  { k: 'F3', d: 'Cycle retail → wholesale → distributor pricing for new lines' },
   { k: 'F4', d: 'Hold the current bill (kept in this browser so you can serve other customers)' },
   { k: 'F8', d: 'Resume the most recently held bill' },
   { k: 'F6', d: 'Charge / complete the sale with the selected payment mode' },
@@ -17,7 +17,7 @@ const keys = [
 
 const steps = [
   { t: '1. Find the product', d: 'Click the search box (F2) and type the product name, SKU or barcode — matching products appear live. Barcode scanners behave like typing the code and pressing Enter.' },
-  { t: '2. Add & adjust', d: 'Press Enter (or tap the tile) to add. Use ↑ ↓ to pick a different result. Tap a line’s Qty to type a quantity, or press +/− for the last line. Type a rupee discount in the Disc column per line.' },
+  { t: '2. Add & adjust', d: 'Press Enter (or tap the tile) to add. Use ↑ ↓ to pick a different result. Tap a line’s Qty to type a quantity, or press +/− for the last line. Type a rupee (₹) discount in the Disc column per line.' },
   { t: '3. Choose customer & payment', d: 'Default is Walk-in Customer with Cash. Use the dropdowns to pick a customer (credit check is automatic via GSTIN state) and Payment Mode: Cash, Card, UPI, Bank or Other.' },
   { t: '4. Charge (F6)', d: 'The server recomputes price, discount and GST (CGST/SGST or IGST based on the delivery state), deducts stock, records the payment, updates the customer balance and posts the accounting entries automatically.' },
   { t: '5. Tenders & returns', d: 'Print the receipt from the sale-completed screen. For returns, open the invoice in Invoices and cancel it — stock and ledger are restored automatically.' },
@@ -27,7 +27,7 @@ const steps = [
 const note = [
   'Discounts are per line, in rupees (₹). The total discount, taxable value and GST are shown live.',
   'GST is calculated on the taxable value (price × qty − discount) using the product’s GST rate.',
-  'Prices shown are MRP/retail unless Wholesale (F3) is on; wholesale price is used when set.',
+  'Prices default to retail. Press F3 (or use the Pricing selector) to cycle Retail, Wholesale or Distributor pricing for new lines; the closest lower tier is used when a price is blank.',
 ];
 
 export default function POSShortcuts() {

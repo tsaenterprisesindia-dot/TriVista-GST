@@ -91,12 +91,12 @@ async function bulk(req, res, next) {
           const [ins] = await pool.query(
             `INSERT INTO products
              (sku,barcode,name,description,category_id,hsn_id,hsn_code,gst_rate,cess_rate,unit,
-              selling_price,wholesale_price,purchase_price,mrp,min_stock,weight_kg,is_service,is_active)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              selling_price,wholesale_price,distributor_price,purchase_price,mrp,min_stock,weight_kg,is_service,is_active)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [
               r.sku || null, r.barcode || null, name, r.description || null, categoryId, hsnId,
               hsnCode, gstRate, r.cess_rate === undefined ? null : Number(r.cess_rate) || 0, String(r.unit || 'PCS').toUpperCase().slice(0, 5),
-              Number(r.selling_price) || 0, r.wholesale_price || null, Number(r.purchase_price) || 0, r.mrp || null,
+              Number(r.selling_price) || 0, r.wholesale_price || null, r.distributor_price || null, Number(r.purchase_price) || 0, r.mrp || null,
               r.min_stock || null, r.weight_kg || null, r.is_service ? 1 : 0,
               r.is_active === undefined ? 1 : r.is_active ? 1 : 0,
             ]

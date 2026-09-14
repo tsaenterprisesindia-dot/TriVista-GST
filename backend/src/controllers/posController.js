@@ -4,6 +4,7 @@ const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
 const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
 const { resolveRateForDate } = require('../utils/rateHistory');
+const { enforceDiscountLimit } = require('../utils/discountPolicy');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
@@ -108,6 +109,9 @@ async function posSale(req, res, next) {
       grandTotal = rounded;
     }
     grandTotal = round2(grandTotal);
+
+    // Staff discount approval limit (ADMIN/SUPER_ADMIN are the approvers)
+    enforceDiscountLimit({ user: req.user, company, subtotal, discount: discountTotal });
 
     // Payment legs — split (cash + UPI, etc.) must exactly total the rounded
     // grand total; legacy calls pay the full amount in a single mode.

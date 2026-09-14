@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import PaymentSplit from '../components/PaymentSplit';
 
 const inr = (n) =>
@@ -10,6 +11,7 @@ const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 export default function Billing() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [company, setCompany] = useState(null);
@@ -18,7 +20,7 @@ export default function Billing() {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [ai, setAi] = useState(null);
-  const [wholesale, setWholesale] = useState(false);
+  const [priceTier, setPriceTier] = useState('retail');
   const [sac, setSac] = useState([]);
   const [sacSearch, setSacSearch] = useState('');
   const [invoices, setInvoices] = useState([]);
@@ -33,6 +35,8 @@ export default function Billing() {
     payments: [],
     notes: '',
     original_invoice_id: '',
+    bill_discount_type: 'amount',
+    bill_discount: 0,
     items: [],
   }));
   const [allowBackdate, setAllowBackdate] = useState(false);
@@ -42,7 +46,7 @@ export default function Billing() {
     api.get('/products?limit=200').then((d) => setProducts(d.data || [])).catch(() => {});
     api.get('/company').then((d) => {
       setCompany(d);
-      if (d.business_type === 'wholesale') setWholesale(true);
+      if (d.business_type === 'wholesale') setPriceTier('wholesale');
     }).catch(() => {});
     api.get('/hsn?type=SAC').then((d) => setSac(d || [])).catch(() => {});
     api.get('/invoices?limit=500').then((d) => setInvoices(d.data || [])).catch(() => {});
@@ -59,6 +63,8 @@ export default function Billing() {
   };
   const isBackdated = form.invoice_date !== localToday();
   const needsEinvoice = !!company?.e_invoice_enabled && Number(company?.aggregate_turnover_crores || 0) >= 5 && !!customer?.gstin;
+  const discountLimitPct = Number(company?.discount_limit_pct) || 0;
+  const isApprover = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const visibleProducts = products.filter(
     (p) => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.sku || '').toLowerCase().includes(search.toLowerCase())
@@ -83,6 +89,7 @@ export default function Billing() {
         quantity: 1,
         unit_price: 0,
         discount: 0,
+        discount_type: 'rupee',
       }],
     }));
   };
@@ -93,7 +100,11 @@ export default function Billing() {
       if (hit) {
         return { ...f, items: f.items.map((i) => (i.product_id === p.id ? { ...i, quantity: r2(i.quantity + 1) } : i)) };
       }
-      const rate = wholesale ? Number(p.wholesale_price || p.selling_price) : Number(p.selling_price);
+      const rate = priceTier === 'distributor'
+        ? Number(p.distributor_price || p.wholesale_price || p.selling_price)
+        : priceTier === 'wholesale'
+          ? Number(p.wholesale_price || p.selling_price)
+          : Number(p.selling_price);
       return {
         ...f,
         items: [
@@ -107,6 +118,7 @@ export default function Billing() {
             quantity: 1,
             unit_price: rate,
             discount: 0,
+            discount_type: 'rupee',
           },
         ],
       };
@@ -125,10 +137,37 @@ export default function Billing() {
   const isCreditDoc = form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE';
   const calc = useMemo(() => {
     const docSign = isCreditDoc ? -1 : 1;
-    let subtotal = 0, discount = 0, cgst = 0, sgst = 0, utgst = 0, igst = 0, cess = 0, tax = 0, grand = 0;
-    const detail = form.items.map((it) => {
-      const gross = it.quantity * it.unit_price;
-      let taxable = gross - (it.discount || 0);
+    // Per-line discount: fixed rupee or % of the line value
+    const raw = form.items.map((it) => {
+      const gross = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
+      const lineDisc = it.discount_type === 'percent'
+        ? r2(gross * (Number(it.discount) || 0) / 100)
+        : Math.min(gross, Math.max(0, Number(it.discount) || 0));
+      return { gross, lineDisc };
+    });
+    const subtotal = raw.reduce((s, l) => s + l.gross, 0);
+    // Bill-level discount: fixed rupee or % of the gross subtotal, apportioned
+    // proportionally to each line's gross value so GST stays correctly split.
+    let billDisc = form.bill_discount_type === 'percent'
+      ? r2(subtotal * (Number(form.bill_discount) || 0) / 100)
+      : Math.max(0, Number(form.bill_discount) || 0);
+    billDisc = Math.min(billDisc, subtotal);
+    const alloc = raw.map((l) => (subtotal > 0 ? r2((l.gross / subtotal) * billDisc) : 0));
+    const allocated = alloc.reduce((s, v) => s + v, 0);
+    let rem = r2(billDisc - allocated);
+    const adj = alloc.map((v, i) => ({ ...raw[i], alloc: v }));
+    if (Math.abs(rem) > 0.001) {
+      for (let i = adj.length - 1; i >= 0; i--) {
+        if (adj[i].gross > 0) { adj[i].alloc = r2(adj[i].alloc + rem); rem = 0; break; }
+      }
+    }
+    const lineDiscount = r2(adj.reduce((s, l) => s + l.lineDisc, 0));
+    const billDiscount = r2(billDisc);
+    let discount = 0, cgst = 0, sgst = 0, utgst = 0, igst = 0, cess = 0, tax = 0, grand = 0;
+    const detail = form.items.map((it, i) => {
+      const gross = adj[i].gross;
+      const disc = r2(adj[i].lineDisc + adj[i].alloc);
+      let taxable = gross - disc;
       let cg = 0, sg = 0, ug = 0, ig = 0, cs = 0;
       const isNil = form.invoice_type === 'NIL';
       const isExport = form.invoice_type === 'EXPORT';
@@ -141,15 +180,22 @@ export default function Billing() {
         // interstate supplies and is never halved.
         cs = r2((taxable * (Number(it.cess_rate) || 0)) / 100);
       }
-      subtotal += gross * docSign;
-      discount += (it.discount || 0) * docSign;
+      discount += disc * docSign;
       cgst += cg * docSign; sgst += sg * docSign; utgst += ug * docSign; igst += ig * docSign; cess += cs * docSign;
       tax += (cg + sg + ug + ig + cs) * docSign;
       grand += (taxable + cg + sg + ug + ig + cs) * docSign;
-      return { ...it, taxable: r2(taxable * docSign), cg: cg * docSign, sg: sg * docSign, ug: ug * docSign, ig: ig * docSign, cs: cs * docSign, line: r2((taxable + cg + sg + ug + ig + cs) * docSign) };
+      return { ...it, disc, taxable: r2(taxable * docSign), cg: cg * docSign, sg: sg * docSign, ug: ug * docSign, ig: ig * docSign, cs: cs * docSign, line: r2((taxable + cg + sg + ug + ig + cs) * docSign) };
     });
-    return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), utgst: r2(utgst), igst: r2(igst), cess: r2(cess), tax: r2(tax), grand: r2(grand) };
-  }, [form.items, isInterstate, isCreditDoc, form.invoice_type, isUt]);
+    const discountPct = subtotal > 0 ? (r2(lineDiscount + billDiscount) / subtotal) * 100 : 0;
+    return {
+      detail, subtotal: r2(subtotal), lineDiscount, billDiscount,
+      discount: r2(lineDiscount + billDiscount), discountPct,
+      cgst: r2(cgst), sgst: r2(sgst), utgst: r2(utgst), igst: r2(igst),
+      cess: r2(cess), tax: r2(tax), grand: r2(grand),
+    };
+  }, [form.items, form.bill_discount, form.bill_discount_type, isInterstate, isCreditDoc, form.invoice_type, isUt]);
+
+  const overDiscountLimit = discountLimitPct > 0 && !isApprover && calc.discountPct > discountLimitPct;
 
   const payload = () => {
     const payRows = (form.payments || []).filter((p) => p && Number(p.amount) > 0);
@@ -171,7 +217,7 @@ export default function Billing() {
         ? (form.original_invoice_id || undefined)
         : undefined,
       allow_backdate: isBackdated ? allowBackdate : undefined,
-      items: form.items.map((it) => ({
+      items: form.items.map((it, idx) => ({
         product_id: it.product_id,
         item_name: it.item_name,
         hsn_code: it.hsn_code,
@@ -180,7 +226,7 @@ export default function Billing() {
         quantity: it.quantity,
         unit: 'PCS',
         unit_price: it.unit_price,
-        discount: it.discount || 0,
+        discount: calc.detail[idx]?.disc || 0,
       })),
     };
   };
@@ -228,6 +274,13 @@ export default function Billing() {
   return (
     <form onSubmit={submit}>
       {error && <div className="error-banner">{error}</div>}
+
+      {overDiscountLimit && (
+        <div className="banner-warn" style={{ border: '1px solid var(--amber)', background: '#fff8e6', padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+          <strong>Discount above approval limit:</strong> this bill carries {calc.discountPct.toFixed(2)}% discount,
+          exceeding the staff limit of {discountLimitPct}%. Only an administrator can save it — reduce the discount or ask an admin.
+        </div>
+      )}
 
       {needsEinvoice && (
         <div className="banner-warn" style={{ border: '1px solid var(--amber)', background: '#fff8e6', padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
@@ -407,8 +460,12 @@ export default function Billing() {
         <div className="card-title">
           <span>Products</span>
           <label className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={wholesale} onChange={(e) => setWholesale(e.target.checked)} style={{ width: 'auto' }} />
-            Use wholesale prices
+            Pricing:
+            <select value={priceTier} onChange={(e) => setPriceTier(e.target.value)} style={{ width: 'auto' }}>
+              <option value="retail">Retail</option>
+              <option value="wholesale">Wholesale</option>
+              <option value="distributor">Distributor</option>
+            </select>
           </label>
         </div>
         <div className="field">
@@ -422,7 +479,9 @@ export default function Billing() {
               <button type="button" className="btn" key={p.id} onClick={() => addItem(p)} style={{ justifyContent: 'space-between' }}>
                 <span>{p.name}</span>
                 <span className="muted nowrap">
-                  {p.wholesale_price ? `${inr(p.wholesale_price)} w / ${inr(p.selling_price)} r` : inr(p.selling_price)}
+                  {inr(p.selling_price)}r
+                  {p.wholesale_price ? ` · ${inr(p.wholesale_price)}w` : ''}
+                  {p.distributor_price ? ` · ${inr(p.distributor_price)}d` : ''}
                 </span>
               </button>
             ))}
@@ -478,7 +537,15 @@ export default function Billing() {
                   <td><input value={it.hsn_code || ''} onChange={setItem(idx, 'hsn_code')} style={{ width: 70 }} /></td>
                   <td className="right"><input type="number" min="0" value={it.quantity} onChange={setItem(idx, 'quantity')} style={{ width: 60, textAlign: 'right' }} /></td>
                   <td className="right"><input type="number" min="0" step="0.01" value={it.unit_price} onChange={setItem(idx, 'unit_price')} style={{ width: 80, textAlign: 'right' }} /></td>
-                  <td className="right"><input type="number" min="0" step="0.01" value={it.discount} onChange={setItem(idx, 'discount')} style={{ width: 70, textAlign: 'right' }} /></td>
+                  <td className="right">
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'flex-end' }}>
+                    <input type="number" min="0" step="any" value={it.discount} onChange={setItem(idx, 'discount')} style={{ width: 60, textAlign: 'right' }} />
+                    <select value={it.discount_type || 'rupee'} onChange={setItem(idx, 'discount_type')} style={{ width: 58 }}>
+                      <option value="rupee">₹</option>
+                      <option value="percent">%</option>
+                    </select>
+                  </div>
+                </td>
 <td className="right"><input type="number" min="0" step="0.01" value={it.gst_rate} onChange={setItem(idx, 'gst_rate')} style={{ width: 60, textAlign: 'right' }} /></td>
                 <td className="right"><input type="number" min="0" step="0.01" value={it.cess_rate} onChange={setItem(idx, 'cess_rate')} style={{ width: 60, textAlign: 'right' }} /></td>
                 <td className="right nowrap">{inr(it.taxable)}</td>
@@ -498,10 +565,37 @@ export default function Billing() {
           <div className="muted">Subtotal</div>
           <div className="right nowrap">{inr(calc.subtotal)}</div>
         </div>
-        <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
-          <div className="muted">Discount</div>
-          <div className="right nowrap">- {inr(calc.discount)}</div>
+        <div className="row" style={{ maxWidth: 420, marginLeft: 'auto', alignItems: 'center' }}>
+          <div className="muted">Bill-level discount</div>
+          <div className="right" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input
+              type="number" min="0" step="any"
+              value={form.bill_discount}
+              onChange={(e) => setForm((f) => ({ ...f, bill_discount: e.target.value }))}
+              style={{ width: 80, textAlign: 'right' }}
+            />
+            <select
+              value={form.bill_discount_type}
+              onChange={(e) => setForm((f) => ({ ...f, bill_discount_type: e.target.value }))}
+              style={{ width: 58 }}
+            >
+              <option value="amount">₹</option>
+              <option value="percent">%</option>
+            </select>
+          </div>
         </div>
+        {calc.lineDiscount > 0 && (
+          <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+            <div className="muted">Line discounts</div>
+            <div className="right nowrap">- {inr(calc.lineDiscount)}</div>
+          </div>
+        )}
+        {calc.billDiscount > 0 && (
+          <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+            <div className="muted">Bill discount</div>
+            <div className="right nowrap">- {inr(calc.billDiscount)}</div>
+          </div>
+        )}
         {calc.cgst > 0 && (
           <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
             <div className="muted">CGST</div><div className="right nowrap">{inr(calc.cgst)}</div>

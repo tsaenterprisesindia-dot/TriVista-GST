@@ -17,6 +17,7 @@ const empty = {
   unit: 'PCS',
   selling_price: '',
   wholesale_price: '',
+  distributor_price: '',
   purchase_price: '',
   mrp: '',
   min_stock: '',
@@ -100,6 +101,7 @@ export default function Products() {
       unit: p.unit,
       selling_price: p.selling_price,
       wholesale_price: p.wholesale_price,
+      distributor_price: p.distributor_price,
       purchase_price: p.purchase_price,
       mrp: p.mrp,
       min_stock: p.min_stock,
@@ -223,6 +225,10 @@ export default function Products() {
                 <input value={form.wholesale_price} onChange={set('wholesale_price')} type="number" step="0.01" placeholder="Leave blank to use retail price" />
               </div>
               <div className="field">
+                <label>Distributor Price</label>
+                <input value={form.distributor_price} onChange={set('distributor_price')} type="number" step="0.01" placeholder="Leave blank to use wholesale price" />
+              </div>
+              <div className="field">
                 <label>Purchase Price</label>
                 <input value={form.purchase_price} onChange={set('purchase_price')} type="number" step="0.01" />
               </div>
@@ -293,6 +299,7 @@ export default function Products() {
                 <th>Unit</th>
                 <th className="right">Selling</th>
                 <th className="right">Wholesale</th>
+                <th className="right">Distributor</th>
                 <th className="right">Stock</th>
                 <th>Service</th>
                 <th className="right">Wt (kg)</th>
@@ -312,6 +319,7 @@ export default function Products() {
                   <td>{p.unit}</td>
                   <td className="right nowrap">{inr(p.selling_price)}</td>
                   <td className="right nowrap">{p.wholesale_price ? inr(p.wholesale_price) : '—'}</td>
+                  <td className="right nowrap">{p.distributor_price ? inr(p.distributor_price) : '—'}</td>
                   <td className="right">{Number(p.stock_on_hand) || 0}</td>
                   <td>{p.is_service ? <span className="badge badge-blue">SERVICE</span> : <span className="badge badge-gray">GOODS</span>}</td>
                   <td className="right nowrap">{p.weight_kg ? Number(p.weight_kg).toFixed(2) : '—'}</td>

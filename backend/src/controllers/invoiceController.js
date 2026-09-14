@@ -5,6 +5,7 @@ const { allocateInvoiceNumber } = require('../utils/invoiceNumber');
 const { getActiveBranch } = require('../utils/branch');
 const { computeTcs } = require('../utils/tds');
 const { resolveRateForDate } = require('../utils/rateHistory');
+const { enforceDiscountLimit } = require('../utils/discountPolicy');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
@@ -207,6 +208,9 @@ async function createInvoiceCore(conn, user, b) {
     grandTotal = rounded;
   }
   grandTotal = round2(grandTotal);
+
+  // Staff discount approval limit (ADMIN/SUPER_ADMIN are the approvers)
+  enforceDiscountLimit({ user, company, subtotal, discount: discountTotal });
 
   // TCS u/s 206C(1H) on the FY-cumulative sales value above the threshold
   const tcsAmount = await computeTcs(

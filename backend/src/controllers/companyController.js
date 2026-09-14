@@ -30,9 +30,9 @@ async function updateSettings(req, res, next) {
       'invoice_footer_note','bank_name','bank_account_no','bank_ifsc','upi_id','upi_beneficiary','gst_tax_preference','round_off',
       'business_type',
       'e_invoice_enabled','aggregate_turnover_crores','apply_tds','apply_tcs','tds_rate','tcs_rate',
-      'tds_threshold','tcs_threshold',
+      'tds_threshold','tcs_threshold','discount_limit_pct',
     ];
-    const numFields = ['invoice_start_number','round_off','aggregate_turnover_crores','tds_rate','tcs_rate','tds_threshold','tcs_threshold'];
+    const numFields = ['invoice_start_number','round_off','aggregate_turnover_crores','tds_rate','tcs_rate','tds_threshold','tcs_threshold','discount_limit_pct'];
     const boolFields = ['e_invoice_enabled','apply_tds','apply_tcs'];
     const sets = [];
     const params = [];

@@ -37,6 +37,7 @@ const fields = [
   'tcs_rate',
   'tds_threshold',
   'tcs_threshold',
+  'discount_limit_pct',
 ];
 
 export default function CompanySettings() {
@@ -490,6 +491,13 @@ export default function CompanySettings() {
             <div className="field">
               <label>TCS Threshold (₹)</label>
               <input value={form.tcs_threshold} onChange={set('tcs_threshold')} type="number" />
+            </div>
+            <div className="field">
+              <label>Staff Discount Limit (%)</label>
+              <input value={form.discount_limit_pct} onChange={set('discount_limit_pct')} type="number" step="0.01" min="0" max="100" placeholder="0 = no cap" />
+              <div className="muted" style={{ fontSize: 12 }}>
+                Non-admin users cannot exceed this discount percentage. Leave blank or 0 to disable the cap.
+              </div>
             </div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <div className="muted" style={{ fontSize: 12 }}>

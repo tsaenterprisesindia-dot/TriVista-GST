@@ -100,6 +100,7 @@ CREATE TABLE `company_settings` (
   `tcs_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.10,
   `tds_threshold` DECIMAL(14,2) NOT NULL DEFAULT 5000000.00,
   `tcs_threshold` DECIMAL(14,2) NOT NULL DEFAULT 5000000.00,
+  `discount_limit_pct` DECIMAL(5,2) DEFAULT NULL COMMENT 'Max discount % staff roles may apply (NULL/0 = no cap)',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
@@ -212,6 +213,7 @@ CREATE TABLE `products` (
   `unit` VARCHAR(30) DEFAULT 'PCS',
   `selling_price` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `wholesale_price` DECIMAL(14,2) DEFAULT NULL,
+  `distributor_price` DECIMAL(14,2) DEFAULT NULL,
   `purchase_price` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `mrp` DECIMAL(14,2) DEFAULT NULL,
   `min_stock` DECIMAL(14,2) DEFAULT NULL,

@@ -31,7 +31,7 @@ export default function POS() {
   const [flash, setFlash] = useState('');
   const [receipt, setReceipt] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [wholesale, setWholesale] = useState(false);
+  const [priceTier, setPriceTier] = useState('retail');
   const [highlight, setHighlight] = useState(0);
   const [held, setHeld] = useState(loadHeld);
   const [showHeld, setShowHeld] = useState(false);
@@ -88,7 +88,13 @@ export default function POS() {
   );
 
   const addItem = (p) => {
-    const rate = Number(wholesale ? p.wholesale_price || p.selling_price : p.selling_price) || 0;
+    const rate = Number(
+      priceTier === 'distributor'
+        ? p.distributor_price || p.wholesale_price || p.selling_price
+        : priceTier === 'wholesale'
+          ? p.wholesale_price || p.selling_price
+          : p.selling_price
+    ) || 0;
     setItems((prev) => {
       const hit = prev.find((i) => i.product_id === p.id);
       if (hit) {
@@ -278,7 +284,7 @@ export default function POS() {
         searchRef.current?.select();
         return;
       }
-      if (k === 'F3') { e.preventDefault(); setWholesale((w) => !w); return; }
+      if (k === 'F3') { e.preventDefault(); setPriceTier((t) => (t === 'retail' ? 'wholesale' : t === 'wholesale' ? 'distributor' : 'retail')); return; }
       if (k === 'F4') { e.preventDefault(); hold(); return; }
       if (k === 'F8') {
         e.preventDefault();
@@ -343,8 +349,16 @@ export default function POS() {
               autoFocus
             />
             <label className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-              <input type="checkbox" checked={wholesale} onChange={(e) => setWholesale(e.target.checked)} style={{ width: 'auto' }} />
-              Wholesale (F3)
+              Pricing (F3):
+              <select
+                value={priceTier}
+                onChange={(e) => setPriceTier(e.target.value)}
+                style={{ width: 'auto', fontSize: 12, padding: '1px 2px' }}
+              >
+                <option value="retail">Retail</option>
+                <option value="wholesale">Wholesale</option>
+                <option value="distributor">Distributor</option>
+              </select>
             </label>
           </div>
 
@@ -391,7 +405,18 @@ export default function POS() {
                 >
                   <span>{p.name}</span>
                   <span className="muted nowrap">
-                    {p.wholesale_price ? (wholesale ? inr(p.wholesale_price) : `${inr(p.selling_price)} / ${inr(p.wholesale_price)}w`) : inr(p.selling_price)}
+                    {inr(
+                        priceTier === 'distributor'
+                          ? p.distributor_price || p.wholesale_price || p.selling_price
+                          : priceTier === 'wholesale'
+                            ? p.wholesale_price || p.selling_price
+                            : p.selling_price
+                      )}
+                      <span className="muted">
+                        {priceTier !== 'retail' && ` · ${inr(p.selling_price)}r`}
+                        {p.wholesale_price ? ` · ${inr(p.wholesale_price)}w` : ''}
+                        {p.distributor_price ? ` · ${inr(p.distributor_price)}d` : ''}
+                      </span>
                   </span>
                 </button>
               ))}
@@ -399,7 +424,7 @@ export default function POS() {
           )}
 
           <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Shortcuts: <b>F2</b> search · <b>↑↓+Enter</b> add · <b>+/-</b> qty · <b>F3</b> wholesale · <b>F4</b> hold · <b>F8</b> resume · <b>F6</b> charge
+            Shortcuts: <b>F2</b> search · <b>↑↓+Enter</b> add · <b>+/-</b> qty · <b>F3</b> price tier · <b>F4</b> hold · <b>F8</b> resume · <b>F6</b> charge
             <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => window.open('/pos/shortcuts', '_blank')}>Shortcuts page (? or print)</button>
           </div>
         </div>
