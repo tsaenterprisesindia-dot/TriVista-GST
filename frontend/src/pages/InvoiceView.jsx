@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { StatusBadge } from './Dashboard';
+import PaymentSplit from '../components/PaymentSplit';
 
 const inr = (n) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(n) || 0);
@@ -20,7 +21,7 @@ export default function InvoiceView() {
   const { id } = useParams();
   const [inv, setInv] = useState(null);
   const [error, setError] = useState('');
-  const [payForm, setPayForm] = useState({ amount: 0, mode: 'CASH', date: new Date().toISOString().slice(0, 10) });
+  const [payForm, setPayForm] = useState({ amount: 0, mode: 'CASH', date: new Date().toISOString().slice(0, 10), payments: [] });
   const [msg, setMsg] = useState('');
 
   const load = () => api.get(`/invoices/${id}`).then(setInv).catch((e) => setError(e.message));
@@ -75,7 +76,7 @@ export default function InvoiceView() {
     try {
       await api.post(`/invoices/${inv.id}/pay`, payForm);
       setMsg('Payment recorded.');
-      setPayForm((f) => ({ ...f, amount: 0 }));
+      setPayForm((f) => ({ ...f, amount: 0, payments: [] }));
       load();
     } catch (err) {
       setError(err.message);
@@ -161,25 +162,22 @@ export default function InvoiceView() {
           </div>
         </div>
         {inv.status !== 'CANCELLED' && inv.status !== 'PAID' && (
-          <form onSubmit={recordPayment} className="row mt" style={{ maxWidth: 700 }}>
-            <div>
-              <label>Payment Amount</label>
-              <input type="number" step="0.01" min="0" max={inv.balance_due} value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} required />
+          <form onSubmit={recordPayment} className="mt" style={{ maxWidth: 700 }}>
+            <div className="row mb">
+              <div>
+                <label>Payment Date</label>
+                <input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div className="muted" style={{ alignSelf: 'flex-end', fontSize: 12 }}>Balance due: {inr(inv.balance_due)}</div>
             </div>
-            <div>
-              <label>Mode</label>
-              <select value={payForm.mode} onChange={(e) => setPayForm((f) => ({ ...f, mode: e.target.value }))}>
-                <option value="CASH">Cash</option>
-                <option value="CARD">Card</option>
-                <option value="UPI">UPI</option>
-                <option value="BANK">Bank</option>
-              </select>
-            </div>
-            <div>
-              <label>Date</label>
-              <input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} />
-            </div>
-            <button className="btn btn-primary" style={{ alignSelf: 'flex-end' }}>Record</button>
+            <PaymentSplit
+              total={inv.balance_due}
+              value={payForm.payments || []}
+              onChange={(rows) => setPayForm((f) => ({ ...f, payments: rows }))}
+              withReference
+              label="Payment"
+            />
+            <button className="btn btn-primary mt" style={{ alignSelf: 'flex-end' }}>Record Payment</button>
           </form>
         )}
         <div className="mt">
@@ -188,6 +186,34 @@ export default function InvoiceView() {
           )}
         </div>
       </div>
+
+      {(inv.payments || []).length > 0 && (
+        <div className="card no-print">
+          <div className="card-title">Payments</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Mode</th>
+                <th className="right">Amount</th>
+                <th>Reference</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(inv.payments || []).map((p) => (
+                <tr key={p.id}>
+                  <td>{p.date}</td>
+                  <td>{p.mode}</td>
+                  <td className="right nowrap">{inr(p.amount)}</td>
+                  <td>{p.reference_no || '—'}</td>
+                  <td className="muted">{p.note || ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card" id="print-area">
         <div className="flex" style={{ justifyContent: 'space-between', borderBottom: '2px solid #111c34', paddingBottom: 12 }}>
@@ -226,6 +252,11 @@ export default function InvoiceView() {
             <div>Tax: {isInterstate ? 'IGST' : isUtInvoice ? 'CGST + UTGST' : 'CGST + SGST'}</div>
             <div>Due Date: {inv.due_date || '—'}</div>
             <div>Payment Mode: {inv.payment_mode}</div>
+            {(inv.payments || []).length > 0 && (
+              <div className="muted" style={{ fontSize: 11 }}>
+                {inv.payments.map((p) => `${p.mode} ${inr(p.amount)}`).join(' + ')}
+              </div>
+            )}
           </div>
         </div>
 

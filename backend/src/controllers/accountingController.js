@@ -5,6 +5,7 @@ const { computeTds } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
+const payments = require('../utils/payments');
 
 /**
  * Create a Purchase Bill (inward supply). Increases stock, records GST input.
@@ -156,16 +157,19 @@ async function createPurchase(req, res, next) {
 
     // Payment if included
     let paidAmount = 0;
-    let paymentId = null;
-    const payAmount = Number(b.paid_amount) || 0;
     const billDate = b.bill_date || new Date().toISOString().slice(0, 10);
-    if (payAmount > 0) {
-      paidAmount = Math.min(payAmount, grandTotal);
-      const [payIns] = await conn.query(
-        `INSERT INTO payments (date,amount,mode,reference_no,note,created_by,bill_id) VALUES (?,?,?,?,?,?,?)`,
-        [billDate, paidAmount, b.payment_mode || 'BANK', null, `Payment for ${billNumber}`, req.user.id, billId]
-      );
-      paymentId = payIns.insertId;
+    const parsedPay = payments.parsePayments(b, { defaultMode: 'BANK' });
+    if (parsedPay.legs.length) {
+      const capped = payments.capLegs(parsedPay.legs, round2(grandTotal));
+      if (capped.legs.length) {
+        paidAmount = capped.total;
+        await payments.recordPurchasePayments(conn, {
+          bill: { id: billId, bill_number: billNumber },
+          legs: capped.legs,
+          date: billDate,
+          created_by: req.user.id,
+        });
+      }
     }
     const status = paidAmount >= grandTotal ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'PENDING';
     await conn.query(
@@ -187,16 +191,6 @@ async function createPurchase(req, res, next) {
       grand_total: round2(grandTotal),
       is_rcm: isRcm ? 1 : 0,
     }, req.user.id);
-    if (paymentId) {
-      await ledger.postPurchasePayment(conn, {
-        bill: { bill_number: billNumber },
-        amount: paidAmount,
-        date: billDate,
-        mode: b.payment_mode || 'BANK',
-        payment_id: paymentId,
-        created_by: req.user.id,
-      });
-    }
 
     await conn.commit();
     await audit(req, 'CREATE', 'purchase_bill', billId, { bill_number: billNumber, vendor_id: vendor.id, grand_total: round2(grandTotal), tds_amount: tdsAmount });
@@ -245,37 +239,47 @@ async function getPurchase(req, res, next) {
 }
 
 async function payPurchase(req, res, next) {
+  const pool = getPool();
+  const conn = await pool.getConnection();
   try {
     const id = Number(req.params.id);
-    const { amount, mode, date } = req.body || {};
-    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'Valid amount required.' });
-    const pool = getPool();
-    const [rows] = await pool.query('SELECT * FROM purchase_bills WHERE id=?', [id]);
-    if (!rows.length) return res.status(404).json({ error: 'Purchase bill not found.' });
+    const { date } = req.body || {};
+    const legs = payments.parsePayments(req.body || {}, { defaultMode: 'BANK' }).legs;
+    if (!legs.length) return res.status(400).json({ error: 'Valid amount required.' });
+
+    await conn.beginTransaction();
+    const [rows] = await conn.query('SELECT * FROM purchase_bills WHERE id=? FOR UPDATE', [id]);
+    if (!rows.length) throw Object.assign(new Error('Purchase bill not found.'), { status: 404 });
     const bill = rows[0];
-    const pay = Math.min(Number(amount), Number(bill.balance_due));
+
+    const pending = Number(bill.balance_due);
+    const capped = payments.capLegs(legs, pending);
+    if (capped.total <= 0) return res.status(400).json({ error: 'Valid amount required.' });
+
     const payDate = date || new Date().toISOString().slice(0, 10);
-    const payMode = mode || 'BANK';
-    const [payIns] = await pool.query(
-      `INSERT INTO payments (date,amount,mode,note,created_by,bill_id) VALUES (?,?,?,?,?,?)`,
-      [payDate, pay, payMode, `Payment for ${bill.bill_number}`, req.user.id, id]
-    );
-    const newPaid = round2(Number(bill.paid_amount) + pay);
-    const balance = round2(Number(bill.grand_total) - newPaid);
-    const status = balance === 0 ? 'PAID' : 'PARTIAL';
-    await pool.query('UPDATE purchase_bills SET paid_amount=?, balance_due=?, status=? WHERE id=?', [newPaid, balance, status, id]);
-    await ledger.postPurchasePayment(pool, {
-      bill: { bill_number: bill.bill_number },
-      amount: pay,
+    await payments.recordPurchasePayments(conn, {
+      bill,
+      legs: capped.legs,
       date: payDate,
-      mode: payMode,
-      payment_id: payIns.insertId,
       created_by: req.user.id,
     });
-    await audit(req, 'PAY', 'payment', id, { amount: pay, mode: mode || 'BANK', bill_number: bill.bill_number });
+
+    const newPaid = round2(Number(bill.paid_amount) + capped.total);
+    const balance = round2(Number(bill.grand_total) - newPaid);
+    const status = balance === 0 ? 'PAID' : 'PARTIAL';
+    await conn.query('UPDATE purchase_bills SET paid_amount=?, balance_due=?, status=? WHERE id=?', [newPaid, balance, status, id]);
+    await conn.commit();
+    await audit(req, 'PAY', 'payment', id, {
+      amount: capped.total,
+      modes: capped.legs.map((l) => `${l.mode}:${l.amount}`),
+      bill_number: bill.bill_number,
+    });
     res.json({ message: 'Payment recorded.', balance_due: balance });
   } catch (e) {
+    await conn.rollback();
     next(e);
+  } finally {
+    conn.release();
   }
 }
 

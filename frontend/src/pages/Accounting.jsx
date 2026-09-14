@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { StatusBadge } from './Dashboard';
+import PaymentSplit from '../components/PaymentSplit';
 
 const inr = (n) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(n) || 0);
@@ -21,6 +22,9 @@ export default function Accounting() {
   const [purchases, setPurchases] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [pform, setPform] = useState({ vendor_id: '', bill_date: today(), is_rcm: false, items: [lineEmpty()] });
+  const [payOpen, setPayOpen] = useState(null);
+  const [payRows, setPayRows] = useState([]);
+  const [payDate, setPayDate] = useState(today());
 
   const [plFrom, setPlFrom] = useState(firstOfMonth());
   const [plTo, setPlTo] = useState(today());
@@ -153,6 +157,22 @@ export default function Accounting() {
   const earn = async (p) => {
     try {
       await api.post(`/accounting/purchases/${p.id}/pay`, { amount: p.balance_due, mode: 'BANK', date: today() });
+      loadPurchases();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const submitSplitPay = async (p) => {
+    const rows = (payRows || []).filter((r) => r && Number(r.amount) > 0);
+    if (!rows.length) return setError('Enter at least one payment.');
+    try {
+      await api.post(`/accounting/purchases/${p.id}/pay`, {
+        date: payDate,
+        payments: rows.map((r) => ({ mode: r.mode, amount: Number(r.amount), reference_no: r.reference_no || null })),
+      });
+      setPayOpen(null);
+      setPayRows([]);
       loadPurchases();
     } catch (err) {
       setError(err.message);
@@ -375,17 +395,52 @@ export default function Accounting() {
                 </thead>
                 <tbody>
                   {purchases.map((p) => (
-                    <tr key={p.id}>
+                  <Fragment key={p.id}>
+                    <tr>
                       <td className="nowrap">{p.bill_number || '—'}</td>
                       <td>{p.vendor_name}</td>
                       <td className="nowrap">{p.bill_date}</td>
                       <td className="right nowrap">{inr(p.grand_total)}</td>
                       <td><StatusBadge status={p.status} /></td>
                       <td className="nowrap">
-                        <button className="btn btn-sm" onClick={() => earn(p)}>Pay</button>
+                        {Number(p.balance_due) > 0 ? (
+                          <>
+                            <button className="btn btn-sm" onClick={() => earn(p)}>Pay (Bank)</button>
+                            <button className="btn btn-sm" onClick={() => { setPayOpen(payOpen === p.id ? null : p.id); setPayRows([]); }}>
+                              {payOpen === p.id ? 'Close' : 'Split'}
+                            </button>
+                          </>
+                        ) : (
+                          <span className="muted">Settled</span>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                    {payOpen === p.id && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: 12 }}>
+                          <div className="row mb">
+                            <div>
+                              <label>Payment Date</label>
+                              <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                            </div>
+                            <div className="muted" style={{ alignSelf: 'flex-end', fontSize: 12 }}>Balance due: {inr(p.balance_due)}</div>
+                          </div>
+                          <PaymentSplit
+                            total={p.balance_due}
+                            value={payRows}
+                            onChange={setPayRows}
+                            withReference
+                            label="Split payment"
+                          />
+                          <div className="mt flex" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                            <button type="button" className="btn btn-sm" onClick={() => { setPayOpen(null); setPayRows([]); }}>Cancel</button>
+                            <button type="button" className="btn btn-sm btn-primary" onClick={() => submitSplitPay(p)}>Record Split Payment</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
                 </tbody>
               </table>
             )}

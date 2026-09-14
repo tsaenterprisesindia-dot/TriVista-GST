@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
+import PaymentSplit from '../components/PaymentSplit';
 
 const inr = (n) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(n) || 0);
@@ -28,6 +29,7 @@ export default function Billing() {
     due_date: '',
     payment_mode: 'CREDIT',
     paid_amount: 0,
+    payments: [],
     notes: '',
     items: [],
   }));
@@ -141,29 +143,35 @@ export default function Billing() {
     return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), utgst: r2(utgst), igst: r2(igst), tax: r2(tax), grand: r2(grand) };
   }, [form.items, isInterstate, isCreditDoc, form.invoice_type, isUt]);
 
-  const payload = () => ({
-    customer_id: form.customer_id,
-    customer_gstin: customer?.gstin || '',
-    invoice_type: form.invoice_type || undefined,
-    place_of_supply: supplyState,
-    is_interstate: isInterstate,
-    invoice_date: form.invoice_date,
-    due_date: form.due_date || null,
-    payment_mode: form.payment_mode,
-    paid_amount: Number(form.paid_amount) || 0,
-    notes: form.notes || null,
-    allow_backdate: isBackdated ? allowBackdate : undefined,
-    items: form.items.map((it) => ({
-      product_id: it.product_id,
-      item_name: it.item_name,
-      hsn_code: it.hsn_code,
-      gst_rate: it.gst_rate,
-      quantity: it.quantity,
-      unit: 'PCS',
-      unit_price: it.unit_price,
-      discount: it.discount || 0,
-    })),
-  });
+  const payload = () => {
+    const payRows = (form.payments || []).filter((p) => p && Number(p.amount) > 0);
+    return {
+      customer_id: form.customer_id,
+      customer_gstin: customer?.gstin || '',
+      invoice_type: form.invoice_type || undefined,
+      place_of_supply: supplyState,
+      is_interstate: isInterstate,
+      invoice_date: form.invoice_date,
+      due_date: form.due_date || null,
+      payment_mode: payRows.length ? payRows[0].mode : form.payment_mode,
+      paid_amount: payRows.length ? r2(payRows.reduce((s, p) => s + (Number(p.amount) || 0), 0)) : Number(form.paid_amount) || 0,
+      payments: payRows.length
+        ? payRows.map((p) => ({ mode: p.mode, amount: Number(p.amount), reference_no: p.reference_no || null }))
+        : undefined,
+      notes: form.notes || null,
+      allow_backdate: isBackdated ? allowBackdate : undefined,
+      items: form.items.map((it) => ({
+        product_id: it.product_id,
+        item_name: it.item_name,
+        hsn_code: it.hsn_code,
+        gst_rate: it.gst_rate,
+        quantity: it.quantity,
+        unit: 'PCS',
+        unit_price: it.unit_price,
+        discount: it.discount || 0,
+      })),
+    };
+  };
 
   const runAiCheck = async () => {
     setError('');
@@ -286,21 +294,49 @@ export default function Billing() {
             )}
           </div>
           <div className="row">
-            <div className="field">
-              <label>Payment Mode</label>
-              <select value={form.payment_mode} onChange={(e) => setForm((f) => ({ ...f, payment_mode: e.target.value }))}>
-                <option value="CREDIT">Credit</option>
-                <option value="CASH">Cash</option>
-                <option value="CARD">Card</option>
-                <option value="UPI">UPI</option>
-                <option value="BANK">Bank Transfer</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Amount Paid Now (₹)</label>
-              <input type="number" step="0.01" min="0" value={form.paid_amount} onChange={(e) => setForm((f) => ({ ...f, paid_amount: e.target.value }))} />
-            </div>
+          <div className="field">
+            <label>Payment Mode</label>
+            <select
+              value={(form.payments || []).length ? (form.payments)[0].mode : form.payment_mode}
+              onChange={(e) => {
+                const m = e.target.value;
+                if ((form.payments || []).length) {
+                  setForm((f) => ({ ...f, payments: f.payments.map((p, i) => (i === 0 ? { ...p, mode: m } : p)) }));
+                } else {
+                  setForm((f) => ({ ...f, payment_mode: m }));
+                }
+              }}
+            >
+              <option value="CREDIT">Credit</option>
+              <option value="CASH">Cash</option>
+              <option value="CARD">Card</option>
+              <option value="UPI">UPI</option>
+              <option value="BANK">Bank Transfer</option>
+            </select>
           </div>
+          <div className="field">
+            <label>Amount Paid Now (₹) — leave 0 for full credit</label>
+            <input
+              type="number" step="0.01" min="0"
+              value={(form.payments || []).length ? '' : form.paid_amount}
+              disabled={(form.payments || []).length > 0}
+              placeholder={String(r2((form.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0)) || '0')}
+              onChange={(e) => setForm((f) => ({ ...f, paid_amount: e.target.value }))}
+            />
+          </div>
+        </div>
+        <details style={{ marginTop: 2 }}>
+          <summary className="muted" style={{ fontSize: 12, cursor: 'pointer' }}>Split payment (e.g. Cash + UPI)</summary>
+          <div className="mt">
+            <PaymentSplit
+              total={calc.grand}
+              value={form.payments || []}
+              onChange={(rows) => setForm((f) => ({ ...f, payments: rows }))}
+              withReference
+              label="Split payment"
+            />
+          </div>
+        </details>
           <div className="field">
             <label>Notes</label>
             <textarea rows="2" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional reference / remarks" />

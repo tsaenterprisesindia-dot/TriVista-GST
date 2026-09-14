@@ -6,6 +6,7 @@ const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
+const payments = require('../utils/payments');
 
 /**
  * Sell from POS: creates a paid invoice, deducts stock, returns invoice details.
@@ -93,6 +94,23 @@ async function posSale(req, res, next) {
     }
     grandTotal = round2(grandTotal);
 
+    // Payment legs — split (cash + UPI, etc.) must exactly total the rounded
+    // grand total; legacy calls pay the full amount in a single mode.
+    let legs;
+    const parsed = payments.parsePayments(b);
+    if (parsed.legs.length) {
+      if (Math.abs(parsed.total - grandTotal) > 0.01) {
+        throw Object.assign(
+          new Error(`Split payment total ${parsed.total} does not match bill total ${grandTotal}.`),
+          { status: 400, expose: true }
+        );
+      }
+      legs = parsed.legs;
+    } else {
+      legs = [{ mode: payments.normalizeMode(b.payment_mode || 'CASH'), amount: grandTotal }];
+    }
+    const firstLegMode = legs[0].mode;
+
     const tcsAmount = await computeTcs(
       conn, customer.id, new Date().toISOString().slice(0, 10),
       round2(subtotal - discountTotal), 0, company
@@ -110,7 +128,7 @@ async function posSale(req, res, next) {
         round2(cgstTotal), round2(sgstTotal), round2(utgstTotal), round2(igstTotal), round2(cessTotal),
         round2(taxTotal), roundOff, grandTotal,
         grandTotal, 0,
-        b.payment_mode || 'CASH', tcsAmount, b.notes || 'POS sale', req.user.id,
+        firstLegMode, tcsAmount, b.notes || 'POS sale', req.user.id,
         placeOfSupply, isInterstate ? 1 : 0, customer.gstin ? 'B2B' : 'B2C',
       ]
     );
@@ -139,11 +157,13 @@ async function posSale(req, res, next) {
       );
     }
 
-    const [payIns] = await conn.query(
-      `INSERT INTO payments (invoice_id,customer_id,date,amount,mode,note,created_by)
-       VALUES (?,?,?,?,?,?,?)`,
-      [invoiceId, customer.id, new Date().toISOString().slice(0, 10), grandTotal, b.payment_mode || 'CASH', 'POS full payment', req.user.id]
-    );
+    await payments.recordInvoicePayments(conn, {
+      invoice: { id: invoiceId, invoice_number: invoiceNumber, customer_id: customer.id },
+      customer_id: customer.id,
+      legs,
+      date: new Date().toISOString().slice(0, 10),
+      created_by: req.user.id,
+    });
 
     // Post double-entry ledgers (idempotent by voucher number)
     await ledger.postSale(conn, {
@@ -158,14 +178,6 @@ async function posSale(req, res, next) {
       utgst_total: round2(utgstTotal),
       igst_total: round2(igstTotal),
     }, req.user.id);
-    await ledger.postSalePayment(conn, {
-      invoice: { invoice_number: invoiceNumber },
-      amount: grandTotal,
-      date: new Date().toISOString().slice(0, 10),
-      mode: b.payment_mode || 'CASH',
-      payment_id: payIns.insertId,
-      created_by: req.user.id,
-    });
 
     await conn.commit();
     await audit(req, 'CREATE', 'invoice', invoiceId, { invoice_number: invoiceNumber, customer_id: customer.id, source: 'POS', grand_total: grandTotal });

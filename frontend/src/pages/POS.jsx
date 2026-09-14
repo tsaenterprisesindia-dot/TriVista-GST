@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
+import PaymentSplit from '../components/PaymentSplit';
 
 const inr = (n) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(n) || 0);
@@ -21,9 +22,10 @@ export default function POS() {
   const [products, setProducts] = useState([]);
   const [grid, setGrid] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [company, setCompany] = useState(null);
   const [search, setSearch] = useState('');
   const [items, setItems] = useState([]);
-  const [paymentMode, setPaymentMode] = useState('CASH');
+  const [payRows, setPayRows] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
@@ -42,6 +44,7 @@ export default function POS() {
       setGrid(d.data || []);
     }).catch((e) => setError(e.message));
     api.get('/customers?limit=100').then((d) => setCustomers(d.data || [])).catch(() => {});
+    api.get('/company').then((d) => setCompany(d)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -149,15 +152,35 @@ export default function POS() {
     };
   }, [items]);
 
+  const target = r2(Number(company?.round_off) === 1 ? Math.round(calc.grand) : calc.grand);
+  const roundOff = r2(target - calc.grand);
+  const payTotal = r2(
+    (Array.isArray(payRows) ? payRows : []).reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  );
+
   const placeSale = async () => {
     if (!items.length) return;
     setError('');
     setReceipt(null);
     setBusy(true);
+    const rows = (Array.isArray(payRows) ? payRows : []).filter((r) => r && Number(r.amount) > 0);
+    const payments = rows.length
+      ? rows.map((r) => ({
+          mode: r.mode || 'CASH',
+          amount: Number(r.amount),
+          reference_no: r.reference_no || null,
+        }))
+      : [{ mode: 'CASH', amount: target }];
+    if (rows.length && Math.abs(payTotal - target) > 0.01) {
+      setBusy(false);
+      setError(`Payment split total (${payTotal}) does not match bill total (${target}).`);
+      return;
+    }
     try {
       const d = await api.post('/pos/sale', {
         customer_id: customerId || null,
-        payment_mode: paymentMode,
+        payment_mode: payments[0].mode,
+        payments,
         items: items.map((it) => ({
           product_id: it.product_id,
           item_name: it.item_name,
@@ -171,7 +194,7 @@ export default function POS() {
       });
       setReceipt(d);
       setItems([]);
-      setPaymentMode('CASH');
+      setPayRows([]);
       setHighlight(0);
       searchRef.current?.focus();
     } catch (err) {
@@ -188,12 +211,12 @@ export default function POS() {
       label: `Held ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`,
       customerId,
       customerName: customers.find((c) => String(c.id) === String(customerId))?.name || 'Walk-in Customer',
-      paymentMode,
+      payRows,
       items,
     };
     setHeld((prev) => [...prev, bill]);
     setItems([]);
-    setPaymentMode('CASH');
+    setPayRows([]);
     setCustomerId('');
     setShowHeld(true);
     showFlash(`Bill held (${items.length} item${items.length === 1 ? '' : 's'}).`);
@@ -204,7 +227,7 @@ export default function POS() {
     if (!bill) return;
     setItems(bill.items || []);
     setCustomerId(bill.customerId || '');
-    setPaymentMode(bill.paymentMode || 'CASH');
+    setPayRows(bill.payRows || []);
     setHeld((prev) => prev.filter((b) => b.id !== id));
     setShowHeld(false);
     showFlash(`Resumed: ${bill.label}`);
@@ -383,17 +406,17 @@ export default function POS() {
                 ))}
               </select>
             </div>
-            <div>
-              <label>Payment Mode</label>
-              <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
-                <option value="CASH">Cash</option>
-                <option value="CARD">Card</option>
-                <option value="UPI">UPI</option>
-                <option value="BANK">Bank</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
           </div>
+
+          {items.length > 0 && (
+            <PaymentSplit
+              total={target}
+              value={payRows}
+              onChange={setPayRows}
+              withReference
+              label="Payment split"
+            />
+          )}
 
           {items.length === 0 ? (
             <div className="empty">Tap products or scan barcodes to add to the cart. F4 holds, F6 charges.</div>
@@ -436,15 +459,18 @@ export default function POS() {
           {calc.discount > 0 && <div className="row"><div className="muted">Discount</div><div className="right nowrap">− {inr(calc.discount)}</div></div>}
           <div className="row"><div className="muted">Taxable</div><div className="right nowrap">{inr(calc.taxable)}</div></div>
           <div className="row"><div className="muted">GST (CGST {inr(calc.cgst)} + SGST {inr(calc.sgst)})</div><div className="right nowrap">{inr(calc.tax)}</div></div>
+          {roundOff !== 0 && (
+            <div className="row"><div className="muted">Round off</div><div className="right nowrap">{inr(roundOff)}</div></div>
+          )}
           <div className="row" style={{ fontSize: 20, fontWeight: 700, marginTop: 6 }}>
-            <div>Total</div><div className="right nowrap">{inr(calc.grand)}</div>
+            <div>Total</div><div className="right nowrap">{inr(target)}</div>
           </div>
 
           <div className="mt flex" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={() => setItems([])} disabled={items.length === 0}>Clear</button>
             <button className="btn" onClick={hold} disabled={items.length === 0}>Hold (F4)</button>
             <button className="btn btn-primary" onClick={placeSale} disabled={busy || items.length === 0}>
-              {busy ? 'Processing…' : `Charge ${inr(calc.grand)} (F6)`}
+              {busy ? 'Processing…' : `Charge ${inr(target)} (F6)`}
             </button>
           </div>
         </div>

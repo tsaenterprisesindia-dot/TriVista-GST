@@ -7,6 +7,7 @@ const { computeTcs } = require('../utils/tds');
 const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
+const payments = require('../utils/payments');
 
 /**
  * Create a GST invoice with full tax computation.
@@ -228,19 +229,21 @@ async function createInvoiceCore(conn, user, b) {
     );
   }
 
-  // Paid amount (if payment_mode != CREDIT and amount given)
+  // Record any payment(s) — single mode or split (cash + UPI, etc.)
   let paidAmount = 0;
-  let paymentId = null;
-  const payAmount = Number(b.paid_amount) || 0;
-  if (payAmount > 0) {
-    paidAmount = Math.min(payAmount, grandTotal);
-    const [payIns] = await conn.query(
-      `INSERT INTO payments (invoice_id,customer_id,date,amount,mode,reference_no,note,created_by)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [invoiceId, customer.id, b.invoice_date || new Date().toISOString().slice(0, 10), paidAmount,
-       b.payment_mode === 'CREDIT' ? 'OTHER' : b.payment_mode, b.reference_no || null, 'Payment on invoice', user.id]
-    );
-    paymentId = payIns.insertId;
+  const legs = payments.parsePayments(b).legs;
+  if (legs.length) {
+    const capped = payments.capLegs(legs, grandTotal);
+    if (capped.legs.length) {
+      paidAmount = capped.total;
+      await payments.recordInvoicePayments(conn, {
+        invoice: { id: invoiceId, invoice_number: invoiceNumber, customer_id: customer.id },
+        customer_id: customer.id,
+        legs: capped.legs,
+        date: b.invoice_date || localDateStr(),
+        created_by: user.id,
+      });
+    }
   }
   const status = paidAmount >= grandTotal ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'PENDING';
   const balance = round2(grandTotal - paidAmount);
@@ -262,16 +265,6 @@ async function createInvoiceCore(conn, user, b) {
     utgst_total: round2(utgstTotal),
     igst_total: round2(igstTotal),
   }, user.id);
-  if (paymentId) {
-    await ledger.postSalePayment(conn, {
-      invoice: { invoice_number: invoiceNumber },
-      amount: paidAmount,
-      date: b.invoice_date || localDateStr(),
-      mode: b.payment_mode === 'CREDIT' ? 'OTHER' : b.payment_mode || 'CASH',
-      payment_id: paymentId,
-      created_by: user.id,
-    });
-  }
 
   return {
     customer_id: customer.id,
@@ -358,8 +351,9 @@ async function addPayment(req, res, next) {
   const conn = await pool.getConnection();
   try {
     const invoiceId = Number(req.params.id);
-    const { amount, mode, reference_no, date, note } = req.body || {};
-    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'Valid amount required.' });
+    const { date, note } = req.body || {};
+    const legs = payments.parsePayments(req.body || {}).legs;
+    if (!legs.length) return res.status(400).json({ error: 'Valid amount required.' });
 
     await conn.beginTransaction();
     const [inv] = await conn.query('SELECT * FROM invoices WHERE id=? FOR UPDATE', [invoiceId]);
@@ -367,35 +361,34 @@ async function addPayment(req, res, next) {
     const invoice = inv[0];
     if (invoice.status === 'CANCELLED') throw Object.assign(new Error('Cannot pay a cancelled invoice.'), { status: 400 });
 
-    let pending = Number(invoice.balance_due);
-    const pay = Math.min(Number(amount), pending);
-    pending = round2(pending - pay);
+    const pending = Number(invoice.balance_due);
+    const capped = payments.capLegs(legs, pending);
+    if (capped.total <= 0) return res.status(400).json({ error: 'Valid amount required.' });
 
-    const [payIns] = await conn.query(
-      `INSERT INTO payments (invoice_id,customer_id,date,amount,mode,reference_no,note,created_by)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [invoice.id, invoice.customer_id, date || localDateStr(), pay,
-       mode || 'CASH', reference_no || null, note || null, req.user.id]
-    );
-    const paymentId = payIns.insertId;
-    const newPaid = round2(Number(invoice.paid_amount) + pay);
-    const status = pending === 0 ? 'PAID' : 'PARTIAL';
-    await conn.query(
-      'UPDATE invoices SET paid_amount=?, balance_due=?, status=? WHERE id=?',
-      [newPaid, pending, status, invoice.id]
-    );
-    await ledger.postSalePayment(conn, {
-      invoice: { invoice_number: invoice.invoice_number },
-      amount: pay,
-      date: date || localDateStr(),
-      mode: mode || 'CASH',
-      payment_id: paymentId,
+    const payDate = date || localDateStr();
+    await payments.recordInvoicePayments(conn, {
+      invoice,
+      customer_id: invoice.customer_id,
+      legs: capped.legs,
+      date: payDate,
       created_by: req.user.id,
     });
+
+    const newPaid = round2(Number(invoice.paid_amount) + capped.total);
+    const due = round2(pending - capped.total);
+    const status = due === 0 ? 'PAID' : 'PARTIAL';
+    await conn.query(
+      'UPDATE invoices SET paid_amount=?, balance_due=?, status=? WHERE id=?',
+      [newPaid, due, status, invoice.id]
+    );
     await refreshCustomerBalance(conn, invoice.customer_id);
     await conn.commit();
-    await audit(req, 'PAY', 'payment', invoiceId, { amount: pay, mode: mode || 'CASH', invoice_number: invoice.invoice_number });
-    res.json({ message: 'Payment recorded.', balance_due: pending });
+    await audit(req, 'PAY', 'payment', invoiceId, {
+      amount: capped.total,
+      modes: capped.legs.map((l) => `${l.mode}:${l.amount}`),
+      invoice_number: invoice.invoice_number,
+    });
+    res.json({ message: 'Payment recorded.', balance_due: due, paid: capped.total });
   } catch (e) {
     await conn.rollback();
     next(e);
