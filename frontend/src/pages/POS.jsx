@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 
 const inr = (n) =>
@@ -6,57 +6,151 @@ const inr = (n) =>
 
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+const HELD_KEY = 'pos_held_bills_v1';
+
+function loadHeld() {
+  try {
+    const raw = localStorage.getItem(HELD_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function POS() {
   const [products, setProducts] = useState([]);
+  const [grid, setGrid] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
   const [items, setItems] = useState([]);
   const [paymentMode, setPaymentMode] = useState('CASH');
   const [customerId, setCustomerId] = useState('');
   const [error, setError] = useState('');
+  const [flash, setFlash] = useState('');
   const [receipt, setReceipt] = useState(null);
   const [busy, setBusy] = useState(false);
   const [wholesale, setWholesale] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const [held, setHeld] = useState(loadHeld);
+  const [showHeld, setShowHeld] = useState(false);
+  const searchRef = useRef(null);
+  const flashTimer = useRef(null);
 
   useEffect(() => {
-    api.get('/products?limit=300').then((d) => setProducts(d.data || [])).catch((e) => setError(e.message));
+    api.get('/products?limit=300').then((d) => {
+      setProducts(d.data || []);
+      setGrid(d.data || []);
+    }).catch((e) => setError(e.message));
     api.get('/customers?limit=100').then((d) => setCustomers(d.data || [])).catch(() => {});
   }, []);
 
-  const visible = products.filter(
-    (p) => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.sku || '').toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    const term = search.trim();
+    if (!term) {
+      setGrid(products);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api.get(`/products?q=${encodeURIComponent(term)}&limit=60`)
+        .then((d) => setGrid(d.data || []))
+        .catch(() => {});
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search, products]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HELD_KEY, JSON.stringify(held));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [held]);
+
+  useEffect(() => setHighlight(0), [grid, search]);
+
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+
+  const showFlash = (msg) => {
+    setFlash(msg);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(''), 3000);
+  };
+
+  const visible = grid.filter(
+    (p) =>
+      !search.trim() ||
+      (p.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
+      (p.sku || '').toLowerCase().includes((search || '').toLowerCase()) ||
+      (p.barcode || '').toLowerCase().includes((search || '').toLowerCase())
   );
 
   const addItem = (p) => {
+    const rate = Number(wholesale ? p.wholesale_price || p.selling_price : p.selling_price) || 0;
     setItems((prev) => {
       const hit = prev.find((i) => i.product_id === p.id);
       if (hit) {
         return prev.map((i) => (i.product_id === p.id ? { ...i, quantity: r2(i.quantity + 1) } : i));
       }
-      return [...prev, { product_id: p.id, item_name: p.name, hsn_code: p.hsn_code, gst_rate: Number(p.gst_rate) || 0, quantity: 1, unit_price: Number(wholesale ? p.wholesale_price || p.selling_price : p.selling_price) || 0 }];
+      return [
+        ...prev,
+        {
+          product_id: p.id, item_name: p.name, hsn_code: p.hsn_code, gst_rate: Number(p.gst_rate) || 0,
+          quantity: 1, unit_price: rate, discount: 0,
+        },
+      ];
     });
   };
 
   const setQty = (idx, q) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, quantity: Math.max(0, Number(q) || 0) } : it)));
 
+  const setDisc = (idx, d) =>
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, discount: Math.max(0, Number(d) || 0) } : it)));
+
   const removeItem = (idx) => setItems((prev) => prev.filter((_, i) => i !== idx));
 
+  const bumpLast = (delta) =>
+    setItems((prev) => {
+      const last = prev.length - 1;
+      if (last < 0) return prev;
+      return prev.map((it, i) => {
+        if (i !== last) return it;
+        const q = Math.max(0, r2((Number(it.quantity) || 0) + delta));
+        return { ...it, quantity: q };
+      });
+    });
+
+  const removeLast = () => setItems((prev) => prev.slice(0, -1));
+
   const calc = useMemo(() => {
-    let subtotal = 0, tax = 0, cgst = 0, sgst = 0, igst = 0;
+    let subtotal = 0, discount = 0, taxable = 0, tax = 0, cgst = 0, sgst = 0, igst = 0;
     items.forEach((it) => {
-      subtotal += it.quantity * it.unit_price;
-      const t = (it.quantity * it.unit_price * it.gst_rate) / 100;
+      const gross = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
+      const disc = Math.max(0, Number(it.discount) || 0);
+      const tv = Math.max(0, gross - disc);
+      subtotal += gross;
+      discount += disc;
+      taxable += tv;
+      const t = (tv * (Number(it.gst_rate) || 0)) / 100;
       cgst += r2(t / 2);
       sgst += r2(t / 2);
       igst += r2(t);
       tax += r2(t);
     });
-    const grand = r2(subtotal + tax);
-    return { subtotal: r2(subtotal), tax: r2(tax), cgst: r2(cgst), sgst: r2(sgst), igst: r2(igst), grand };
+    return {
+      subtotal: r2(subtotal),
+      discount: r2(discount),
+      taxable: r2(taxable),
+      tax: r2(tax),
+      cgst: r2(cgst),
+      sgst: r2(sgst),
+      igst: r2(igst),
+      grand: r2(taxable + tax),
+    };
   }, [items]);
 
   const placeSale = async () => {
+    if (!items.length) return;
     setError('');
     setReceipt(null);
     setBusy(true);
@@ -64,11 +158,22 @@ export default function POS() {
       const d = await api.post('/pos/sale', {
         customer_id: customerId || null,
         payment_mode: paymentMode,
-        items: items.map((it) => ({ product_id: it.product_id, item_name: it.item_name, hsn_code: it.hsn_code, gst_rate: it.gst_rate, quantity: it.quantity, unit: 'PCS', unit_price: it.unit_price })),
+        items: items.map((it) => ({
+          product_id: it.product_id,
+          item_name: it.item_name,
+          hsn_code: it.hsn_code,
+          gst_rate: it.gst_rate,
+          quantity: it.quantity,
+          unit: 'PCS',
+          unit_price: it.unit_price,
+          discount: it.discount,
+        })),
       });
       setReceipt(d);
       setItems([]);
       setPaymentMode('CASH');
+      setHighlight(0);
+      searchRef.current?.focus();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -76,9 +181,107 @@ export default function POS() {
     }
   };
 
+  const hold = () => {
+    if (!items.length) return showFlash('Nothing to hold.');
+    const bill = {
+      id: Date.now(),
+      label: `Held ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`,
+      customerId,
+      customerName: customers.find((c) => String(c.id) === String(customerId))?.name || 'Walk-in Customer',
+      paymentMode,
+      items,
+    };
+    setHeld((prev) => [...prev, bill]);
+    setItems([]);
+    setPaymentMode('CASH');
+    setCustomerId('');
+    setShowHeld(true);
+    showFlash(`Bill held (${items.length} item${items.length === 1 ? '' : 's'}).`);
+  };
+
+  const resume = (id) => {
+    const bill = held.find((b) => b.id === id);
+    if (!bill) return;
+    setItems(bill.items || []);
+    setCustomerId(bill.customerId || '');
+    setPaymentMode(bill.paymentMode || 'CASH');
+    setHeld((prev) => prev.filter((b) => b.id !== id));
+    setShowHeld(false);
+    showFlash(`Resumed: ${bill.label}`);
+    searchRef.current?.focus();
+  };
+
+  const deleteHeld = (id) =>
+    setHeld((prev) => prev.filter((b) => b.id !== id));
+
+  const onSearchKey = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const m = visible[Math.min(highlight, visible.length - 1)];
+      if (!m) return;
+      addItem(m);
+      const term = search.trim().toLowerCase();
+      if (term && (String(m.barcode || '').toLowerCase() === term || String(m.sku || '').toLowerCase() === term)) {
+        setSearch('');
+      }
+      setHighlight(0);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (visible.length) setHighlight((h) => Math.min(visible.length - 1, h + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => Math.max(0, h - 1));
+    }
+  };
+
+  useEffect(() => {
+    const handler = (e) => {
+      const t = e.target;
+      const editable = t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA');
+      const k = e.key;
+      if (k === 'F2' || ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'k') || (k === '/' && !editable)) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+        return;
+      }
+      if (k === 'F3') { e.preventDefault(); setWholesale((w) => !w); return; }
+      if (k === 'F4') { e.preventDefault(); hold(); return; }
+      if (k === 'F8') {
+        e.preventDefault();
+        if (held.length) resume(held[held.length - 1].id);
+        else showFlash('No held bills.');
+        return;
+      }
+      if (k === 'F6') { e.preventDefault(); placeSale(); return; }
+      if (k === 'Escape') {
+        if (receipt) { e.preventDefault(); setReceipt(null); return; }
+        if (showHeld) { e.preventDefault(); setShowHeld(false); return; }
+        e.preventDefault();
+        return;
+      }
+      if (editable) return;
+      if (k === 'ArrowDown') { e.preventDefault(); if (visible.length) setHighlight((h) => Math.min(visible.length - 1, h + 1)); return; }
+      if (k === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(0, h - 1)); return; }
+      if (k === 'Enter') {
+        e.preventDefault();
+        const m = visible[Math.min(highlight, visible.length - 1)];
+        if (m) addItem(m);
+        return;
+      }
+      if (k === '+' || k === '=') { e.preventDefault(); bumpLast(1); return; }
+      if (k === '-' || k === '_') { e.preventDefault(); bumpLast(-1); return; }
+      if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); removeLast(); return; }
+      if (k === '?') { e.preventDefault(); window.open('/pos/shortcuts', '_blank'); return; }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  });
+
   return (
     <>
       {error && <div className="error-banner">{error}</div>}
+      {flash && <div className="success-banner">{flash}</div>}
 
       {receipt && (
         <div className="card" style={{ maxWidth: 420, margin: '0 auto 16px', textAlign: 'center' }}>
@@ -97,24 +300,75 @@ export default function POS() {
         <div className="card">
           <div className="card-title">Products</div>
           <div className="flex mb">
-            <input placeholder="Search products / barcode / SKU" value={search} onChange={(e) => setSearch(e.target.value)} className="mb" style={{ marginBottom: 0, flex: 1 }} />
+            <input
+              ref={searchRef}
+              placeholder="Search products / barcode / SKU — scan or type, then Enter"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={onSearchKey}
+              style={{ flex: 1 }}
+              autoFocus
+            />
             <label className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
               <input type="checkbox" checked={wholesale} onChange={(e) => setWholesale(e.target.checked)} style={{ width: 'auto' }} />
-              Wholesale
+              Wholesale (F3)
             </label>
           </div>
+
+          <div className="flex mb" style={{ justifyContent: 'space-between', fontSize: 12 }}>
+            <span className="muted" style={{ whiteSpace: 'nowrap' }}>
+              {held.length > 0 ? `${held.length} held bill${held.length === 1 ? '' : 's'}` : 'No held bills'}
+            </span>
+            <button className="btn btn-sm" onClick={() => setShowHeld((s) => !s)}>
+              {showHeld ? 'Hide' : 'Held Bills'} (F4 hold · F8 resume)
+            </button>
+          </div>
+
+          {showHeld && held.length > 0 && (
+            <div className="card" style={{ padding: 8, marginBottom: 10 }}>
+              {[...held].reverse().map((b) => (
+                <div key={b.id} className="flex" style={{ justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                  <span>
+                    <b>{b.label}</b>
+                    <span className="muted"> · {b.items.length} item{b.items.length === 1 ? '' : 's'} · {inr(b.items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unit_price) || 0) - (Number(it.discount) || 0), 0))} · {b.customerName}</span>
+                  </span>
+                  <span className="flex">
+                    <button className="btn btn-sm btn-primary" onClick={() => resume(b.id)}>Resume</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => deleteHeld(b.id)}>×</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {visible.length === 0 ? (
-            <div className="empty">No products match.</div>
+            <div className="empty">No products match. Try scanning the barcode or a different name/SKU.</div>
           ) : (
             <div className="stats-grid">
-              {visible.slice(0, 60).map((p) => (
-                <button type="button" className="btn" key={p.id} onClick={() => addItem(p)} style={{ justifyContent: 'space-between' }}>
+              {visible.slice(0, 60).map((p, i) => (
+                <button
+                  type="button"
+                  className="btn"
+                  key={p.id}
+                  onClick={() => addItem(p)}
+                  style={{
+                    justifyContent: 'space-between',
+                    outline: i === highlight ? '2px solid var(--primary)' : undefined,
+                  }}
+                >
                   <span>{p.name}</span>
-                  <span className="muted nowrap">{p.wholesale_price ? (wholesale ? inr(p.wholesale_price) : `${inr(p.selling_price)} / ${inr(p.wholesale_price)}w`) : inr(p.selling_price)}</span>
+                  <span className="muted nowrap">
+                    {p.wholesale_price ? (wholesale ? inr(p.wholesale_price) : `${inr(p.selling_price)} / ${inr(p.wholesale_price)}w`) : inr(p.selling_price)}
+                  </span>
                 </button>
               ))}
             </div>
           )}
+
+          <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Shortcuts: <b>F2</b> search · <b>↑↓+Enter</b> add · <b>+/-</b> qty · <b>F3</b> wholesale · <b>F4</b> hold · <b>F8</b> resume · <b>F6</b> charge
+            <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => window.open('/pos/shortcuts', '_blank')}>Shortcuts page (? or print)</button>
+          </div>
         </div>
 
         <div className="card">
@@ -142,7 +396,7 @@ export default function POS() {
           </div>
 
           {items.length === 0 ? (
-            <div className="empty">Tap products to add to the cart.</div>
+            <div className="empty">Tap products or scan barcodes to add to the cart. F4 holds, F6 charges.</div>
           ) : (
             <table>
               <thead>
@@ -150,6 +404,7 @@ export default function POS() {
                   <th>Item</th>
                   <th className="right">Qty</th>
                   <th className="right">Rate</th>
+                  <th className="right">Disc</th>
                   <th className="right">GST%</th>
                   <th className="right">Amount</th>
                   <th></th>
@@ -159,10 +414,17 @@ export default function POS() {
                 {items.map((it, idx) => (
                   <tr key={idx}>
                     <td>{it.item_name}</td>
-                    <td className="right"><input type="number" min="0" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} style={{ width: 60, textAlign: 'right' }} /></td>
+                    <td className="right">
+                      <input type="number" min="0" step="any" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} style={{ width: 60, textAlign: 'right' }} />
+                    </td>
                     <td className="right nowrap">{inr(it.unit_price)}</td>
+                    <td className="right">
+                      <input type="number" min="0" step="any" value={it.discount ?? 0} onChange={(e) => setDisc(idx, e.target.value)} style={{ width: 60, textAlign: 'right' }} />
+                    </td>
                     <td className="right">{it.gst_rate}%</td>
-                    <td className="right nowrap">{inr(it.quantity * it.unit_price)}</td>
+                    <td className="right nowrap">
+                      {inr(Math.max(0, (Number(it.quantity) || 0) * (Number(it.unit_price) || 0) - (Number(it.discount) || 0)))}
+                    </td>
                     <td className="right"><button className="btn btn-sm btn-danger" onClick={() => removeItem(idx)}>×</button></td>
                   </tr>
                 ))}
@@ -171,6 +433,8 @@ export default function POS() {
           )}
 
           <div className="row mt"><div className="muted">Subtotal</div><div className="right nowrap">{inr(calc.subtotal)}</div></div>
+          {calc.discount > 0 && <div className="row"><div className="muted">Discount</div><div className="right nowrap">− {inr(calc.discount)}</div></div>}
+          <div className="row"><div className="muted">Taxable</div><div className="right nowrap">{inr(calc.taxable)}</div></div>
           <div className="row"><div className="muted">GST (CGST {inr(calc.cgst)} + SGST {inr(calc.sgst)})</div><div className="right nowrap">{inr(calc.tax)}</div></div>
           <div className="row" style={{ fontSize: 20, fontWeight: 700, marginTop: 6 }}>
             <div>Total</div><div className="right nowrap">{inr(calc.grand)}</div>
@@ -178,8 +442,9 @@ export default function POS() {
 
           <div className="mt flex" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={() => setItems([])} disabled={items.length === 0}>Clear</button>
+            <button className="btn" onClick={hold} disabled={items.length === 0}>Hold (F4)</button>
             <button className="btn btn-primary" onClick={placeSale} disabled={busy || items.length === 0}>
-              {busy ? 'Processing…' : `Charge ${inr(calc.grand)}`}
+              {busy ? 'Processing…' : `Charge ${inr(calc.grand)} (F6)`}
             </button>
           </div>
         </div>

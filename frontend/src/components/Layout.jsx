@@ -7,6 +7,7 @@ import NotificationBell from './NotificationBell';
 const allNavItems = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/pos', label: 'POS', hideForViewer: true },
+  { to: '/pos/shortcuts', label: 'POS Shortcuts' },
   { to: '/billing', label: 'New Invoice', hideForViewer: true },
   { to: '/invoices', label: 'Invoices' },
   { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true },
