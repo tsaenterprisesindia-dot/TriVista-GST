@@ -234,6 +234,7 @@ export default function InvoiceView() {
             {inv.irn && <div className="muted">IRN: {inv.irn}</div>}
             {inv.qr_url && <img src={inv.qr_url} alt="IRN QR" style={{ width: 80, height: 80, marginTop: 6, border: '1px solid #ddd', borderRadius: 6 }} />}
             <div className="muted">Type: {inv.invoice_type} · {isInterstate ? 'Inter-state' : 'Intra-state'}</div>
+            {inv.against_invoice_no && <div className="muted">Adjusts: {inv.against_invoice_no}</div>}
           </div>
         </div>
 
@@ -249,7 +250,7 @@ export default function InvoiceView() {
           <div style={{ textAlign: 'right' }}>
             <div className="muted" style={{ fontSize: 11 }}>SUMMARY</div>
             <div>Place of Supply: {inv.place_of_supply}</div>
-            <div>Tax: {isInterstate ? 'IGST' : isUtInvoice ? 'CGST + UTGST' : 'CGST + SGST'}</div>
+            <div>Tax: {isInterstate ? 'IGST' : isUtInvoice ? 'CGST + UTGST' : 'CGST + SGST'}{Number(inv.cess_total) > 0 ? ' + Cess' : ''}</div>
             <div>Due Date: {inv.due_date || '—'}</div>
             <div>Payment Mode: {inv.payment_mode}</div>
             {(inv.payments || []).length > 0 && (

@@ -82,6 +82,10 @@ export default function Integration() {
       <div className="grid-2">
         <div className="card">
           <div className="card-title">e-Invoice</div>
+          <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+            Registered supplier: Irn √, RegRev N. Services are flagged IsServc Y (SAC) / N (HSN).
+            Generations and submissions are audit-logged below.
+          </div>
           <div className="field">
             <label>Invoice</label>
             <select value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)}>
@@ -122,6 +126,10 @@ export default function Integration() {
 
         <div className="card">
           <div className="card-title">e-Way Bill</div>
+          <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+            An e-Way Bill is required when the consignment value exceeds ₹50,000 (exports and QRMP
+            transporters are exempt). Below the threshold the generator simply returns required:false.
+          </div>
           <div className="field">
             <label>Invoice</label>
             <select value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)}>
@@ -154,7 +162,7 @@ export default function Integration() {
           <button className="btn btn-primary" disabled={!invoiceId} onClick={generateEway}>Generate e-Way Bill</button>
           {ewayPayload && (
             <div className="field mt">
-              <label>e-Way Bill Payload</label>
+              <label>e-Way Bill Payload {ewayPayload.required === false && <span className="badge badge-amber">Not required — {ewayPayload.reason || 'below threshold'}</span>}</label>
               <pre style={{ background: '#f8fafc', padding: 12, borderRadius: 8, overflow: 'auto', fontSize: 12 }}>
                 {JSON.stringify(ewayPayload, null, 2)}
               </pre>

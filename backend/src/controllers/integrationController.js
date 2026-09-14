@@ -59,7 +59,11 @@ async function buildEinvoicePayload(invoiceId) {
   if (!invRows.length) throw Object.assign(new Error('Invoice not found.'), { status: 404 });
   const inv = invRows[0];
   const [items] = await pool.query(
-    `SELECT ii.*, p.unit FROM invoice_items ii LEFT JOIN products p ON p.id=ii.product_id WHERE ii.invoice_id=? ORDER BY ii.id`,
+    `SELECT ii.*, p.unit, p.is_service, h.type AS hsn_type
+       FROM invoice_items ii
+       LEFT JOIN products p ON p.id=ii.product_id
+       LEFT JOIN hsn_sac_codes h ON h.code=ii.hsn_code
+      WHERE ii.invoice_id=? ORDER BY ii.id`,
     [invoiceId]
   );
   const [cus] = await pool.query('SELECT * FROM customers WHERE id=?', [inv.customer_id]);
@@ -76,7 +80,8 @@ async function buildEinvoicePayload(invoiceId) {
 
   const itemList = items.map((it, i) => ({
     SlNo: i + 1,
-    IsServc: it.gst_rate ? 'N' : 'N',
+    // IsServc: 'Y' for services (SAC codes / service products), 'N' for goods.
+    IsServc: Number(it.is_service) === 1 || it.hsn_type === 'SAC' ? 'Y' : 'N',
     ItmDet: {
       Barcde: null,
       GstRt: Number(it.gst_rate) || 0,
@@ -95,7 +100,10 @@ async function buildEinvoicePayload(invoiceId) {
     TranDtls: {
       TaxSch: 'GST',
       SupTyp: inv.invoice_type === 'B2B' ? 'B2B' : 'B2C',
-      RegRev: inv.is_interstate ? 'Y' : 'N',
+      // RegRev 'Y' only for reverse-charge outward supplies (a narrow service
+      // list). This system models no outward RCM, so always 'N' per GSTN
+      // e-invoice schema; RCM purchases are inward-only.
+      RegRev: 'N',
       EcmGstin: null,
       IgstOnIntra: 'N',
     },
@@ -349,6 +357,9 @@ async function buildEwayPayload(pool, invId, b) {
   return {
     Vers: 1,
     EwbNo: null,
+    // GSTN EWB schema: DocType INV/CHL/OTH; SupplyType CS (intra) / IS (inter) / EXP.
+    DocType: 'INV',
+    SupplyType: inv.is_interstate ? 'IS' : 'CS',
     EwbDtls: {
       VehNo: b.vehicle_no || '',
       Dist: Number(b.distance_km) || 0,
@@ -370,13 +381,56 @@ async function buildEwayPayload(pool, invId, b) {
   };
 }
 
+// Rule 138(1) CGST Rules 2017: Part A of the e-Way Bill is required when the
+// consignment value of a registered person's supply exceeds ₹50,000.
+const EWAY_THRESHOLD = 50000;
+
+/**
+ * Rule 138 applicability check. Exports and supplies at/below ₹50,000 do not
+ * need an e-Way Bill. Returns { required, reason, invoice }.
+ */
+async function ewayApplicability(pool, invId) {
+  const [invRows] = await pool.query('SELECT * FROM invoices WHERE id=?', [invId]);
+  if (!invRows.length) throw Object.assign(new Error('Invoice not found.'), { status: 404 });
+  const inv = invRows[0];
+  const value = Number(inv.grand_total) || 0;
+  if (String(inv.invoice_type).toUpperCase() === 'EXPORT') {
+    return { required: false, invoice: inv, reason: 'Exports are exempt from e-Way Bill requirements (Rule 138 exempts export consignments).' };
+  }
+  if (value <= EWAY_THRESHOLD) {
+    return {
+      required: false,
+      invoice: inv,
+      reason: `Consignment value ₹${value.toFixed(2)} is not above the ₹50,000 threshold (Rule 138(1) CGST Rules 2017) — e-Way Bill not required.`,
+    };
+  }
+  return { required: true, invoice: inv };
+}
+
+/** Part B advisory per Rule 138(2)/(3): transporter/vehicle details. */
+function ewayPartBAdvisory(b) {
+  const dist = Number(b.distance_km) || 0;
+  if (dist > 50 && !(b.vehicle_no || '').trim()) {
+    return `Movement distance ${dist} km exceeds 50 km — upload Part B (vehicle number) via the transporter. A permitted first leg (business place to transporter place, ≤50 km within state) does not need Part B details.`;
+  }
+  if (dist > 0 && !(b.transporter_gstin || b.transporter_name || '').trim()) {
+    return `Part B: transporter details pending (Rule 138(3)) — enter transporter GSTIN/name or update once the vehicle is assigned.`;
+  }
+  return null;
+}
+
 async function generateEwaybill(req, res, next) {
   try {
     const invId = Number(req.params.id);
     const b = req.body || {};
     const pool = getPool();
+    const app = await ewayApplicability(pool, invId);
+    if (!app.required) {
+      return res.json({ required: false, invoice_id: invId, reason: app.reason });
+    }
     const payload = await buildEwayPayload(pool, invId, b);
     const [invRows] = await pool.query('SELECT invoice_number FROM invoices WHERE id=?', [invId]);
+    const partB = ewayPartBAdvisory(b);
 
     // Sandbox: no numeric assignment without real API creds.
     await pool.query(
@@ -389,6 +443,7 @@ async function generateEwaybill(req, res, next) {
     res.json({
       message: 'e-Way Bill JSON prepared. Submit via GSTN e-Way Bill API or the official portal with your transporter token.',
       payload,
+      part_b_advisory: partB,
     });
   } catch (e) {
     next(e);
@@ -405,6 +460,10 @@ async function submitEway(req, res, next) {
     const invId = Number(req.params.id);
     const b = req.body || {};
     const pool = getPool();
+    const app = await ewayApplicability(pool, invId);
+    if (!app.required) {
+      return res.json({ required: false, invoice_id: invId, reason: app.reason });
+    }
     const payload = await buildEwayPayload(pool, invId, b);
     const [invRows] = await pool.query('SELECT invoice_number FROM invoices WHERE id=?', [invId]);
 

@@ -68,10 +68,15 @@ async function posSale(req, res, next) {
         fallbackRate: Number(it.gst_rate) || 0,
       });
       const gstRate = resolved.gst_rate;
-      itemRates.push(gstRate);
+      let cessRate = it.cess_rate !== undefined ? Number(it.cess_rate) || 0 : resolved.cess_rate;
+      if (it.product_id) {
+        const [p] = await conn.query('SELECT cess_rate FROM products WHERE id=?', [it.product_id]);
+        if (p.length && p[0].cess_rate != null) cessRate = Number(p[0].cess_rate) || 0;
+      }
+      itemRates.push({ gst: gstRate, cess: cessRate });
       const gross = qty * rate;
       const taxableValue = gross - disc;
-      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
+      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState, cessRate);
 
       subtotal += gross;
       discountTotal += disc;
@@ -153,9 +158,10 @@ async function posSale(req, res, next) {
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.unit_price) || 0;
       const disc = Number(it.discount) || 0;
-      const gstRate = itemRates[idx] || Number(it.gst_rate) || 0;
+      const gstRate = (itemRates[idx]?.gst ?? Number(it.gst_rate)) || 0;
+      const cessRate = itemRates[idx]?.cess ?? 0;
       const taxableValue = qty * rate - disc;
-      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
+      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState, cessRate);
       await conn.query(
         `INSERT INTO invoice_items
          (invoice_id,product_id,item_name,hsn_code,gst_rate,quantity,unit,unit_price,discount,
@@ -187,6 +193,7 @@ async function posSale(req, res, next) {
       sgst_total: round2(sgstTotal),
       utgst_total: round2(utgstTotal),
       igst_total: round2(igstTotal),
+      cess_total: round2(cessTotal),
     }, req.user.id);
 
     await conn.commit();

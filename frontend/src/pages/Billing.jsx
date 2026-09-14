@@ -21,6 +21,7 @@ export default function Billing() {
   const [wholesale, setWholesale] = useState(false);
   const [sac, setSac] = useState([]);
   const [sacSearch, setSacSearch] = useState('');
+  const [invoices, setInvoices] = useState([]);
 
   const [form, setForm] = useState(() => ({
     customer_id: '',
@@ -31,6 +32,7 @@ export default function Billing() {
     paid_amount: 0,
     payments: [],
     notes: '',
+    original_invoice_id: '',
     items: [],
   }));
   const [allowBackdate, setAllowBackdate] = useState(false);
@@ -43,6 +45,7 @@ export default function Billing() {
       if (d.business_type === 'wholesale') setWholesale(true);
     }).catch(() => {});
     api.get('/hsn?type=SAC').then((d) => setSac(d || [])).catch(() => {});
+    api.get('/invoices?limit=500').then((d) => setInvoices(d.data || [])).catch(() => {});
   }, []);
 
   const customer = customers.find((c) => String(c.id) === String(form.customer_id));
@@ -60,7 +63,7 @@ export default function Billing() {
   const visibleProducts = products.filter(
     (p) => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.sku || '').toLowerCase().includes(search.toLowerCase())
   );
-  const isUt = ['04','26','38'].includes(String(companyState));
+  const isUt = ['04','26','34','38'].includes(String(companyState));
   const visibleSac = sac.filter(
     (s) => sacSearch && (
       (s.code || '').toLowerCase().includes(sacSearch.toLowerCase()) ||
@@ -76,6 +79,7 @@ export default function Billing() {
         item_name: h.description || h.code,
         hsn_code: h.code,
         gst_rate: Number(h.gst_rate) || 0,
+        cess_rate: Number(h.cess_rate) || 0,
         quantity: 1,
         unit_price: 0,
         discount: 0,
@@ -99,6 +103,7 @@ export default function Billing() {
             item_name: p.name,
             hsn_code: p.hsn_code,
             gst_rate: Number(p.gst_rate) || 0,
+            cess_rate: Number(p.cess_rate) || 0,
             quantity: 1,
             unit_price: rate,
             discount: 0,
@@ -120,11 +125,11 @@ export default function Billing() {
   const isCreditDoc = form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE';
   const calc = useMemo(() => {
     const docSign = isCreditDoc ? -1 : 1;
-    let subtotal = 0, discount = 0, cgst = 0, sgst = 0, utgst = 0, igst = 0, tax = 0, grand = 0;
+    let subtotal = 0, discount = 0, cgst = 0, sgst = 0, utgst = 0, igst = 0, cess = 0, tax = 0, grand = 0;
     const detail = form.items.map((it) => {
       const gross = it.quantity * it.unit_price;
       let taxable = gross - (it.discount || 0);
-      let cg = 0, sg = 0, ug = 0, ig = 0;
+      let cg = 0, sg = 0, ug = 0, ig = 0, cs = 0;
       const isNil = form.invoice_type === 'NIL';
       const isExport = form.invoice_type === 'EXPORT';
       if (isNil) taxable = 0;
@@ -132,15 +137,18 @@ export default function Billing() {
         if (isInterstate) ig = r2((taxable * it.gst_rate) / 100);
         else if (isUt) { cg = r2((taxable * it.gst_rate) / 200); ug = r2((taxable * it.gst_rate) / 200); }
         else { cg = r2((taxable * it.gst_rate) / 200); sg = r2((taxable * it.gst_rate) / 200); }
+        // Compensation cess applies at full rate on both intra-state and
+        // interstate supplies and is never halved.
+        cs = r2((taxable * (Number(it.cess_rate) || 0)) / 100);
       }
       subtotal += gross * docSign;
       discount += (it.discount || 0) * docSign;
-      cgst += cg * docSign; sgst += sg * docSign; utgst += ug * docSign; igst += ig * docSign;
-      tax += (cg + sg + ug + ig) * docSign;
-      grand += (taxable + cg + sg + ug + ig) * docSign;
-      return { ...it, taxable: r2(taxable * docSign), cg: cg * docSign, sg: sg * docSign, ug: ug * docSign, ig: ig * docSign, line: r2((taxable + cg + sg + ug + ig) * docSign) };
+      cgst += cg * docSign; sgst += sg * docSign; utgst += ug * docSign; igst += ig * docSign; cess += cs * docSign;
+      tax += (cg + sg + ug + ig + cs) * docSign;
+      grand += (taxable + cg + sg + ug + ig + cs) * docSign;
+      return { ...it, taxable: r2(taxable * docSign), cg: cg * docSign, sg: sg * docSign, ug: ug * docSign, ig: ig * docSign, cs: cs * docSign, line: r2((taxable + cg + sg + ug + ig + cs) * docSign) };
     });
-    return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), utgst: r2(utgst), igst: r2(igst), tax: r2(tax), grand: r2(grand) };
+    return { detail, subtotal: r2(subtotal), discount: r2(discount), cgst: r2(cgst), sgst: r2(sgst), utgst: r2(utgst), igst: r2(igst), cess: r2(cess), tax: r2(tax), grand: r2(grand) };
   }, [form.items, isInterstate, isCreditDoc, form.invoice_type, isUt]);
 
   const payload = () => {
@@ -159,12 +167,16 @@ export default function Billing() {
         ? payRows.map((p) => ({ mode: p.mode, amount: Number(p.amount), reference_no: p.reference_no || null }))
         : undefined,
       notes: form.notes || null,
+      original_invoice_id: (form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE')
+        ? (form.original_invoice_id || undefined)
+        : undefined,
       allow_backdate: isBackdated ? allowBackdate : undefined,
       items: form.items.map((it) => ({
         product_id: it.product_id,
         item_name: it.item_name,
         hsn_code: it.hsn_code,
         gst_rate: it.gst_rate,
+        cess_rate: it.cess_rate || 0,
         quantity: it.quantity,
         unit: 'PCS',
         unit_price: it.unit_price,
@@ -290,6 +302,22 @@ export default function Billing() {
             {(form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE') && (
               <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
                 Credit/debit notes are stored with negative amounts so monthly/annual GST reports net them correctly.
+              </div>
+            )}
+            {(form.invoice_type === 'CREDIT_NOTE' || form.invoice_type === 'DEBIT_NOTE') && (
+              <div className="field mt">
+                <label>Adjusts Original Invoice (GSTR-1 Table 8A/9B)</label>
+                <select value={form.original_invoice_id} onChange={(e) => setForm((f) => ({ ...f, original_invoice_id: e.target.value }))}>
+                  <option value="">— Select the tax invoice this note adjusts —</option>
+                  {invoices
+                    .filter((inv) => String(inv.customer_id) === String(form.customer_id) && String(inv.status) !== 'CANCELLED')
+                    .map((inv) => (
+                      <option key={inv.id} value={inv.id}>{inv.invoice_number} · {inv.invoice_date} · {inr(inv.grand_total)}</option>
+                    ))}
+                </select>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                  Linking the original invoice drives the CDNR "inum/idt" fields in the GSTR-1 JSON.
+                </div>
               </div>
             )}
           </div>
@@ -433,10 +461,12 @@ export default function Billing() {
                 <th className="right">Rate</th>
                 <th className="right">Disc</th>
                 <th className="right">GST%</th>
+                <th className="right">Cess%</th>
                 <th className="right">Taxable</th>
                 <th className="right">CGST</th>
                 <th className="right">{isUt ? 'UTGST' : 'SGST'}</th>
                 <th className="right">IGST</th>
+                <th className="right">Cess</th>
                 <th className="right">Line</th>
                 <th></th>
               </tr>
@@ -449,12 +479,14 @@ export default function Billing() {
                   <td className="right"><input type="number" min="0" value={it.quantity} onChange={setItem(idx, 'quantity')} style={{ width: 60, textAlign: 'right' }} /></td>
                   <td className="right"><input type="number" min="0" step="0.01" value={it.unit_price} onChange={setItem(idx, 'unit_price')} style={{ width: 80, textAlign: 'right' }} /></td>
                   <td className="right"><input type="number" min="0" step="0.01" value={it.discount} onChange={setItem(idx, 'discount')} style={{ width: 70, textAlign: 'right' }} /></td>
-                  <td className="right"><input type="number" min="0" step="0.01" value={it.gst_rate} onChange={setItem(idx, 'gst_rate')} style={{ width: 60, textAlign: 'right' }} /></td>
-                  <td className="right nowrap">{inr(it.taxable)}</td>
-                  <td className="right nowrap">{inr(it.cg)}</td>
-                  <td className="right nowrap">{inr(isUt ? it.ug : it.sg)}</td>
-                  <td className="right nowrap">{inr(it.ig)}</td>
-                  <td className="right nowrap">{inr(it.line)}</td>
+<td className="right"><input type="number" min="0" step="0.01" value={it.gst_rate} onChange={setItem(idx, 'gst_rate')} style={{ width: 60, textAlign: 'right' }} /></td>
+                <td className="right"><input type="number" min="0" step="0.01" value={it.cess_rate} onChange={setItem(idx, 'cess_rate')} style={{ width: 60, textAlign: 'right' }} /></td>
+                <td className="right nowrap">{inr(it.taxable)}</td>
+                <td className="right nowrap">{inr(it.cg)}</td>
+                <td className="right nowrap">{inr(isUt ? it.ug : it.sg)}</td>
+                <td className="right nowrap">{inr(it.ig)}</td>
+                <td className="right nowrap">{inr(it.cs)}</td>
+                <td className="right nowrap">{inr(it.line)}</td>
                   <td className="right"><button type="button" className="btn btn-sm btn-danger" onClick={() => removeItem(idx)}>×</button></td>
                 </tr>
               ))}
@@ -483,6 +515,11 @@ export default function Billing() {
         {calc.igst > 0 && (
           <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
             <div className="muted">IGST</div><div className="right nowrap">{inr(calc.igst)}</div>
+          </div>
+        )}
+        {calc.cess > 0 && (
+          <div className="row" style={{ maxWidth: 420, marginLeft: 'auto' }}>
+            <div className="muted">Compensation Cess</div><div className="right nowrap">{inr(calc.cess)}</div>
           </div>
         )}
         <div className="row" style={{ maxWidth: 420, marginLeft: 'auto', fontSize: 18, fontWeight: 700, marginTop: 6 }}>

@@ -351,7 +351,8 @@ async function gstr1Json(req, res, next) {
     const [rows] = await pool.query(
       `SELECT i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type,
               i.customer_gstin, i.place_of_supply,
-              ii.hsn_code, ii.gst_rate,
+              oi.invoice_number AS orig_invoice_no, oi.invoice_date AS orig_invoice_date,
+              ii.hsn_code, ii.gst_rate, ii.unit,
               SUM(ii.quantity) AS quantity,
               SUM(ii.taxable_value) AS taxable_value,
               SUM(ii.cgst_amount) AS cgst,
@@ -361,23 +362,36 @@ async function gstr1Json(req, res, next) {
               SUM(ii.cess_amount) AS cess
        FROM invoice_items ii
        JOIN invoices i ON i.id=ii.invoice_id
+       LEFT JOIN invoices oi ON oi.id=i.original_invoice_id
        WHERE i.invoice_date BETWEEN ? AND ? AND i.status NOT IN ('CANCELLED')
        GROUP BY i.invoice_number, i.invoice_date, i.is_interstate, i.invoice_type,
-                i.customer_gstin, i.place_of_supply, ii.hsn_code, ii.gst_rate
+                i.customer_gstin, i.place_of_supply, oi.invoice_number, oi.invoice_date,
+                ii.hsn_code, ii.gst_rate, ii.unit
        ORDER BY i.invoice_date`, [from, to]
     );
     const [company] = await pool.query('SELECT * FROM company_settings ORDER BY id LIMIT 1');
     const gstin = company[0]?.gstin || '';
     const fp = from.slice(2, 7); // MMYYYY from YYYY-MM-DD
 
+    const [hsnRows] = await pool.query('SELECT code, description FROM hsn_sac_codes');
+    const hsnDesc = new Map(hsnRows.map((h) => [h.code, h.description || h.code]));
+
+    // Unit Quantity Code (UQC) per the GSTN allowed list (HSN summary).
+    const UQC_MAP = { PCS:'PCS',NOS:'NOS',KGS:'KGS',KG:'KGS',GMS:'GMS',GM:'GMS',LTR:'LTR',LT:'LTR',MLT:'MLT',MTR:'MTR',MT:'MTR',MTS:'MTS',SET:'SET',BOX:'BOX',BAG:'BAG',BTL:'BTL',BUN:'BUN',CAN:'CAN',CTN:'CTN',DOZ:'DOZ',DOZEN:'DOZ',PAC:'PAC',QTL:'QTL',ROL:'ROL',TON:'TON',TUB:'TUB',CBM:'CBM',SQF:'SQF',SQM:'SQM',SQY:'SQY',YDS:'YDS' };
+    const uqcFor = (u) => UQC_MAP[String(u || '').toUpperCase()] || 'OTH';
+
+    const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+    const abs = (n) => Math.abs(round2(n));
+
+    // GSTN GSTR-1 item detail (itm_det) has NO `utamt` field — the UTGST
+    // (state-tax) component of intra-UT supplies is reported under `samt`.
     const itmDet = (r) => ({
-      txval: Math.round(Number(r.taxable_value) * 100) / 100,
+      txval: abs(r.taxable_value),
       rt: Number(r.gst_rate),
-      iamt: Math.abs(Math.round(Number(r.igst) * 100) / 100),
-      camt: Math.abs(Math.round(Number(r.cgst) * 100) / 100),
-      samt: Math.abs(Math.round(Number(r.sgst) * 100) / 100),
-      utamt: Math.abs(Math.round(Number(r.utgst) * 100) / 100),
-      csamt: Math.abs(Math.round(Number(r.cess) * 100) / 100),
+      iamt: abs(r.igst),
+      camt: abs(r.cgst),
+      samt: abs((Number(r.sgst) || 0) + (Number(r.utgst) || 0)),
+      csamt: abs(r.cess),
     });
     const itms = (ins) =>
       ins.map((r, idx) => ({
@@ -395,6 +409,8 @@ async function gstr1Json(req, res, next) {
           is_interstate: Number(r.is_interstate),
           invoice_type: (r.invoice_type || (r.customer_gstin ? 'B2B' : 'B2C')).toUpperCase(),
           customer_gstin: r.customer_gstin || '',
+          orig_invoice_no: r.orig_invoice_no || null,
+          orig_invoice_date: r.orig_invoice_date || null,
           pos: String(r.place_of_supply || '').slice(0, 2),
           items: [],
         });
@@ -408,25 +424,53 @@ async function gstr1Json(req, res, next) {
     const cdnrMap = new Map(); // key ctin
     const expList = [];
     const nilRows = [];
-    const hsnMap = new Map();
+    const hsnB2bMap = new Map();
+    const hsnB2cMap = new Map();
 
     const gstnInv = (inv) => ({
       inum: inv.invoice_number,
       idt: inv.invoice_date,
-      val: Math.round(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0) * 100) / 100,
+      val: abs(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0)),
       pos: inv.pos || undefined,
       itms: itms(inv.items),
     });
 
+    const pushHsn = (map, r) => {
+      const key = `${r.hsn_code}|${r.gst_rate}`;
+      if (!map.has(key)) {
+        map.set(key, { hsn: r.hsn_code, rt: Number(r.gst_rate), unit: r.unit || 'PCS', qty: 0, txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 });
+      }
+      const h = map.get(key);
+      h.qty += Number(r.quantity) || 0;
+      h.txval += Number(r.taxable_value) || 0;
+      h.iamt += Number(r.igst) || 0;
+      h.camt += Number(r.cgst) || 0;
+      h.samt += (Number(r.sgst) || 0) + (Number(r.utgst) || 0);
+      h.csamt += Number(r.cess) || 0;
+    };
+
+    const buildHsn = (map) =>
+      [...map.values()]
+        .sort((a, b) => (a.hsn > b.hsn ? 1 : -1) || a.rt - b.rt)
+        .map((h, idx) => ({
+          num: idx + 1,
+          hsn_sc: h.hsn,
+          desc: hsnDesc.get(h.hsn) || h.hsn,
+          uqc: uqcFor(h.unit),
+          qty: h.qty,
+          txval: abs(h.txval),
+          rt: h.rt,
+          iamt: abs(h.iamt),
+          camt: abs(h.camt),
+          samt: abs(h.samt),
+          csamt: abs(h.csamt),
+        }));
+
     for (const inv of invMap.values()) {
       const pos = inv.pos;
       for (const r of inv.items) {
-        hsnMap.set(`${r.hsn_code}|${r.gst_rate}`, {
-          hsn: r.hsn_code, rt: Number(r.gst_rate), qty: Number(r.quantity) || 0,
-          txval: Number(r.taxable_value) || 0,
-          iamt: Number(r.igst) || 0, camt: Number(r.cgst) || 0, samt: Number(r.sgst) || 0,
-          utamt: Number(r.utgst) || 0, csamt: Number(r.cess) || 0,
-        });
+        if (inv.invoice_type === 'B2B' || inv.invoice_type === 'EXPORT') pushHsn(hsnB2bMap, r);
+        else if (inv.invoice_type === 'B2C') pushHsn(hsnB2cMap, r);
       }
 
       if (inv.invoice_type === 'CREDIT_NOTE' || inv.invoice_type === 'DEBIT_NOTE') {
@@ -439,7 +483,9 @@ async function gstr1Json(req, res, next) {
           ntty,
           pos: pos || undefined,
           typ: ctin ? 'B2B' : 'B2C',
-          val: Math.abs(Math.round(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0) * 100) / 100),
+          // GSTR-1 CDNR: original (adjusted) invoice number/date when linked.
+          ...(inv.orig_invoice_no ? { inum: inv.orig_invoice_no, idt: inv.orig_invoice_date } : {}),
+          val: abs(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0)),
           itms: itms(inv.items),
         });
         continue;
@@ -451,8 +497,9 @@ async function gstr1Json(req, res, next) {
       if (inv.invoice_type === 'NIL') {
         nilRows.push({
           sply_ty: inv.is_interstate ? 'INTER' : 'INTR',
-          nil_amt: Math.round(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0) * 100) / 100,
-          expt_amt: 0, ngsup_amt: 0, sply_ty: inv.is_interstate ? 'INTER' : 'INTR',
+          nil_amt: abs(inv.items.reduce((s, r) => s + Number(r.taxable_value) || 0, 0)),
+          expt_amt: 0,
+          ngsup_amt: 0,
         });
         continue;
       }
@@ -466,60 +513,51 @@ async function gstr1Json(req, res, next) {
       } else {
         for (const r of inv.items) {
           const rt = String(r.gst_rate);
-          if (!b2cs.has(rt)) b2cs.set(rt, { rt: Number(r.gst_rate), ad_amt: 0, txval: 0, iamt: 0, camt: 0, samt: 0, utamt: 0, csamt: 0 });
+          if (!b2cs.has(rt)) b2cs.set(rt, { rt: Number(r.gst_rate), sply_ty: 'INTR', ad_amt: 0, txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 });
           const b = b2cs.get(rt);
           b.txval += Number(r.taxable_value) || 0;
           b.iamt += Number(r.igst) || 0;
           b.camt += Number(r.cgst) || 0;
-          b.samt += Number(r.sgst) || 0;
-          b.utamt += Number(r.utgst) || 0;
+          b.samt += (Number(r.sgst) || 0) + (Number(r.utgst) || 0);
           b.csamt += Number(r.cess) || 0;
         }
       }
     }
 
-    const payload = {
-      gstin,
-      fp,
-      version: '1.7',
-      hash: 'dummy',
-    };
-    if (b2bMap.size) payload.B2B = [...b2bMap.values()];
-    if (b2clMap.size) payload.B2CL = [...b2clMap.values()];
-    if (b2cs.size) payload.B2CS = Object.values(b2cs);
+    // GSTN returns JSON envelope. version is the offline-utility format version
+    // (overridable via env). hash is a real SHA-256 of the JSON body (hash field
+    // itself excluded), not a placeholder.
+    const version = process.env.GSTR1_JSON_VERSION || '1.7';
+    const payloadBase = { gstin, fp, version };
+    if (b2bMap.size) payloadBase.B2B = [...b2bMap.values()];
+    if (b2clMap.size) payloadBase.B2CL = [...b2clMap.values()];
+    if (b2cs.size) payloadBase.B2CS = Object.values(b2cs);
     if (cdnrMap.size)
-      payload.CDNR = [...cdnrMap.entries()].map(([ctin, nts]) => ({ ctin: ctin || undefined, cdnr: { ctin: ctin || undefined, nt: nts } }));
-    if (expList.length) payload.EXP = expList;
-    if (nilRows.length) payload.NIL = Object.values(
+      payloadBase.CDNR = [...cdnrMap.entries()].map(([ctin, nts]) => ({ ctin: ctin || undefined, cdnr: { ctin: ctin || undefined, nt: nts } }));
+    if (expList.length) payloadBase.EXP = expList;
+    if (nilRows.length) payloadBase.NIL = Object.values(
       nilRows.reduce((m, r) => {
         m[r.sply_ty] = m[r.sply_ty] || { sply_ty: r.sply_ty, nil_amt: 0, expt_amt: 0, ngsup_amt: 0 };
         m[r.sply_ty].nil_amt += r.nil_amt;
         return m;
       }, {})
     );
-    if (hsnMap.size) {
-      payload.HSN = [...hsnMap.values()]
-        .sort((a, b) => (a.hsn > b.hsn ? 1 : -1))
-        .map((h) => ({
-          num: 1,
-          hsn_sc: h.hsn,
-          irn_cn: h.hsn,
-          irn_ngsup: h.hsn,
-          slc: 1,
-          txval: Math.round(h.txval * 100) / 100,
-          iamt: Math.abs(Math.round(h.iamt * 100) / 100),
-          camt: Math.abs(Math.round(h.camt * 100) / 100),
-          samt: Math.abs(Math.round(h.samt * 100) / 100),
-          ...(h.utamt > 0 ? { utamt: Math.abs(Math.round(h.utamt * 100) / 100) } : {}),
-          csamt: Math.abs(Math.round(h.csamt * 100) / 100),
-          qty: Number(h.qty) || 0,
-          unit: 'NOS',
-        }));
+    if (hsnB2bMap.size || hsnB2cMap.size) {
+      payloadBase.hsn = {};
+      if (hsnB2bMap.size) payloadBase.hsn.hsn_b2b = buildHsn(hsnB2bMap);
+      if (hsnB2cMap.size) payloadBase.hsn.hsn_b2c = buildHsn(hsnB2cMap);
     }
+
+    const { createHash } = require('crypto');
+    const compiled = JSON.stringify(payloadBase, null, 2);
+    const hash = createHash('sha256').update(compiled).digest('hex');
+    // Inject the hash line immediately after "version" so the digest is over the
+    // exact bytes a verifier sees after stripping the hash field.
+    const body = compiled.replace(/"version":\s*("[^"]*")/, (m, v) => `"version": ${v},\n  "hash": ${JSON.stringify(hash)}`);
 
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="gstr1-${fp}.json"`);
-    res.send(JSON.stringify(payload, null, 2));
+    res.send(body);
   } catch (e) {
     next(e);
   }
@@ -1058,15 +1096,19 @@ async function itcRegister(req, res, next) {
               pb.subtotal AS taxable_value, pb.cgst_total AS cgst, pb.sgst_total AS sgst,
               pb.utgst_total AS utgst,
               pb.igst_total AS igst, pb.tax_total AS total_gst,
-              CASE WHEN pb.vendor_gstin IS NULL THEN 'INELIGIBLE (RCM)' ELSE 'ELIGIBLE' END AS eligible,
+              CASE
+                WHEN pb.is_rcm = 1 THEN 'ELIGIBLE (RCM)'
+                WHEN pb.vendor_gstin IS NULL THEN 'INELIGIBLE'
+                ELSE 'ELIGIBLE'
+              END AS eligible,
               pb.grand_total
        FROM purchase_bills pb
        WHERE pb.bill_date BETWEEN ? AND ? AND pb.status NOT IN ('CANCELLED')
        ORDER BY pb.bill_date, pb.bill_number`, [from, to]
     );
     const itcSums = await Promise.all([
-      pool.query(`SELECT IFNULL(SUM(tax_total),0) AS eligible FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND vendor_gstin IS NOT NULL`, [from, to]),
-      pool.query(`SELECT IFNULL(SUM(tax_total),0) AS ineligible FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND vendor_gstin IS NULL`, [from, to]),
+      pool.query(`SELECT IFNULL(SUM(tax_total),0) AS eligible FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND (is_rcm=1 OR vendor_gstin IS NOT NULL)`, [from, to]),
+      pool.query(`SELECT IFNULL(SUM(tax_total),0) AS ineligible FROM purchase_bills WHERE bill_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED') AND is_rcm=0 AND vendor_gstin IS NULL`, [from, to]),
     ]);
     const eligible = Number(itcSums[0][0][0].eligible) || 0;
     const ineligible = Number(itcSums[1][0][0].ineligible) || 0;

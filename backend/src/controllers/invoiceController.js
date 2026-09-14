@@ -58,11 +58,30 @@ async function createInvoiceCore(conn, user, b) {
     ? requestedType
     : defaultType;
   const isCreditDoc = invoiceType === 'CREDIT_NOTE' || invoiceType === 'DEBIT_NOTE';
+  const isRestockDoc = invoiceType === 'CREDIT_NOTE';
   const isNilDoc = invoiceType === 'NIL';
   const isExportDoc = invoiceType === 'EXPORT';
   const sign = isCreditDoc ? -1 : 1;
   // Tax-exempt party: nil-rated supply keeps its taxable value but carries no GST.
   const isExempt = customer.tax_exempt && !isExportDoc;
+
+  // Credit/debit notes reference the tax invoice they adjust (GSTR-1 Table 8A/9B:
+  // CDNR carries the original invoice number/date = inum/idt).
+  let againstInvoiceNo = null;
+  if (isCreditDoc && b.original_invoice_id) {
+    const [orig] = await conn.query('SELECT * FROM invoices WHERE id=?', [Number(b.original_invoice_id)]);
+    if (!orig.length) throw Object.assign(new Error('Original invoice not found.'), { status: 400, expose: true });
+    const originalInv = orig[0];
+    if (Number(originalInv.customer_id) !== Number(customer.id)) {
+      throw Object.assign(new Error('Original invoice belongs to a different customer.'), { status: 400, expose: true });
+    }
+    if (originalInv.status === 'CANCELLED') {
+      throw Object.assign(new Error('Cannot link a credit/debit note to a cancelled invoice.'), { status: 400, expose: true });
+    }
+    againstInvoiceNo = originalInv.invoice_number;
+  } else if (isCreditDoc && b.against_invoice_no) {
+    againstInvoiceNo = String(b.against_invoice_no).trim() || null;
+  }
 
   // Atomically allocate next invoice number (gap-less per FY, per branch)
   const invoiceNumber = await allocateInvoiceNumber(conn, branch, invDate);
@@ -73,20 +92,31 @@ async function createInvoiceCore(conn, user, b) {
   let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
   const itemRows = [];
   const saleMoveIds = [];
+  const restockMoveIds = [];
 
   for (const it of b.items) {
     const qty = Number(it.quantity) || 1;
     const rate = Number(it.unit_price) || 0;
     const disc = Number(it.discount) || 0;
+    // Product master carries the HSN/SAC when the line omits it (API consumers).
+    let productRow = null;
+    if (it.product_id) {
+      const [p] = await conn.query('SELECT name, hsn_code, cess_rate, is_service, track_batch, track_serial FROM products WHERE id=?', [it.product_id]);
+      if (p.length) productRow = p[0];
+    }
     // Effective-dated rate: resolve the statutory GST rate for the HSN/SAC on
     // the invoice date (never hard-coded). Client-supplied rate is only the
     // fallback for manual lines without a resolvable HSN.
     const resolved = await resolveRateForDate(conn, {
-      hsnCode: it.hsn_code,
+      hsnCode: it.hsn_code || productRow?.hsn_code || null,
       date: invDate,
       fallbackRate: Number(it.gst_rate) || 0,
     });
     let gstRate = resolved.gst_rate;
+    // Compensation cess: client line > product override > dated HSN history.
+    const cessRate = it.cess_rate !== undefined
+      ? Number(it.cess_rate) || 0
+      : productRow?.cess_rate != null ? Number(productRow.cess_rate) || 0 : Number(resolved.cess_rate) || 0;
     const gross = qty * rate;
     let taxableValue = gross - disc;
     // Nil/exempt documents carry no tax (portal reports taxable position separately).
@@ -97,7 +127,7 @@ async function createInvoiceCore(conn, user, b) {
     }
     const tax = isNilDoc || isExportDoc || isExempt
       ? { cgst: 0, sgst: 0, utgst: 0, igst: 0, cess: 0 }
-      : splitGst(taxableValue, gstRate, placeOfSupply, companyState);
+      : splitGst(taxableValue, gstRate, placeOfSupply, companyState, cessRate);
     const lineTotal = (taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess) * sign;
 
     subtotal += gross * sign;
@@ -112,8 +142,8 @@ async function createInvoiceCore(conn, user, b) {
 
     itemRows.push({
       product_id: it.product_id || null,
-      item_name: it.item_name,
-      hsn_code: it.hsn_code || null,
+      item_name: it.item_name ?? productRow?.name ?? null,
+      hsn_code: it.hsn_code || productRow?.hsn_code || null,
       gst_rate: gstRate,
       quantity: qty,
       unit: it.unit || 'PCS',
@@ -128,41 +158,43 @@ async function createInvoiceCore(conn, user, b) {
       total: round2(lineTotal),
     });
 
-    // Stock handling: OUT on sale, IN (restock) on credit notes. Services are skipped.
-    if (it.product_id) {
-      const [p] = await conn.query('SELECT is_service, track_batch, track_serial FROM products WHERE id=?', [it.product_id]);
-      if (p.length) {
-        const track = { track_batch: p[0].track_batch, track_serial: p[0].track_serial };
-        if (p[0].is_service) {
-          if (isCreditDoc) {
-            await lots.recordIn(conn, {
-              product_id: it.product_id, qty, unit_cost: null,
-              note: `Credit note ${invoiceNumber} restock`, created_by: user.id,
-              reference_type: 'credit_note', reference_id: null, track,
-            });
-          }
-        } else if (isCreditDoc) {
-          let batchId = null;
-          if (it.batch_no || p[0].track_batch) {
-            batchId = await lots.getOrCreateLot(conn, {
-              product_id: it.product_id, batch_no: it.batch_no || `RESTOCK-${String(invoiceNumber).slice(-6)}`,
-              expiry_date: it.expiry_date, mfg_date: it.mfg_date, created_by: user.id,
-            });
-          }
-          await lots.recordIn(conn, {
+    // Stock handling: OUT on sale, IN (restock) on credit notes only. Services
+    // never issue stock. Debit notes adjust money, not goods — no movement.
+    if (productRow) {
+      const track = { track_batch: productRow.track_batch, track_serial: productRow.track_serial };
+      if (productRow.is_service) {
+        if (isRestockDoc) {
+          const m = await lots.recordIn(conn, {
             product_id: it.product_id, qty, unit_cost: null,
             note: `Credit note ${invoiceNumber} restock`, created_by: user.id,
-            reference_type: 'credit_note', reference_id: null,
-            track: { ...track, batch_id: batchId, serial_numbers: it.serial_numbers },
+            reference_type: 'credit_note', reference_id: null, track,
           });
-        } else {
-          const inserted = await lots.issueForSale(conn, {
-            product_id: it.product_id, qty,
-            note: `Invoice ${invoiceNumber}`, created_by: user.id,
-            reference_type: 'invoice', reference_id: null,
-          });
-          saleMoveIds.push(...inserted.map((m) => m.id));
+          restockMoveIds.push(m);
         }
+      } else if (isRestockDoc) {
+        let batchId = null;
+        if (it.batch_no || productRow.track_batch) {
+          batchId = await lots.getOrCreateLot(conn, {
+            product_id: it.product_id, batch_no: it.batch_no || `RESTOCK-${String(invoiceNumber).slice(-6)}`,
+            expiry_date: it.expiry_date, mfg_date: it.mfg_date, created_by: user.id,
+          });
+        }
+        const m = await lots.recordIn(conn, {
+          product_id: it.product_id, qty, unit_cost: null,
+          note: `Credit note ${invoiceNumber} restock`, created_by: user.id,
+          reference_type: 'credit_note', reference_id: null,
+          track: { ...track, batch_id: batchId, serial_numbers: it.serial_numbers },
+        });
+        restockMoveIds.push(m);
+      } else if (invoiceType === 'DEBIT_NOTE') {
+        // Debit notes carry no goods movement (Rule 47/48: money adjustment only).
+      } else {
+        const inserted = await lots.issueForSale(conn, {
+          product_id: it.product_id, qty,
+          note: `Invoice ${invoiceNumber}`, created_by: user.id,
+          reference_type: 'invoice', reference_id: null,
+        });
+        saleMoveIds.push(...inserted.map((m) => m.id));
       }
     }
   }
@@ -182,12 +214,12 @@ async function createInvoiceCore(conn, user, b) {
     round2(subtotal - discountTotal), 0, company
   );
 
-  const [ins] = await conn.query(
+const [ins] = await conn.query(
     `INSERT INTO invoices
      (invoice_number,invoice_date,due_date,customer_id,customer_name,customer_gstin,invoice_type,
-      place_of_supply,is_interstate,status,subtotal,discount,cgst_total,sgst_total,utgst_total,igst_total,cess_total,
+      original_invoice_id,against_invoice_no,place_of_supply,is_interstate,status,subtotal,discount,cgst_total,sgst_total,utgst_total,igst_total,cess_total,
       tax_total,round_off,grand_total,paid_amount,balance_due,payment_mode,tcs_amount,notes,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       invoiceNumber,
       invDate,
@@ -196,6 +228,8 @@ async function createInvoiceCore(conn, user, b) {
       customer.name,
       customer.gstin || null,
       invoiceType,
+      b.original_invoice_id ? Number(b.original_invoice_id) : null,
+      againstInvoiceNo,
       placeOfSupply,
       isInterstate ? 1 : 0,
       'PENDING',
@@ -222,6 +256,10 @@ async function createInvoiceCore(conn, user, b) {
   if (saleMoveIds.length) {
     const ph = saleMoveIds.map(() => '?').join(',');
     await conn.query(`UPDATE stock_movements SET reference_id=? WHERE id IN (${ph})`, [invoiceId, ...saleMoveIds]);
+  }
+  if (restockMoveIds.length) {
+    const ph = restockMoveIds.map(() => '?').join(',');
+    await conn.query(`UPDATE stock_movements SET reference_id=? WHERE id IN (${ph})`, [invoiceId, ...restockMoveIds]);
   }
 
   for (const it of itemRows) {
@@ -273,6 +311,7 @@ async function createInvoiceCore(conn, user, b) {
     sgst_total: round2(sgstTotal),
     utgst_total: round2(utgstTotal),
     igst_total: round2(igstTotal),
+    cess_total: round2(cessTotal),
   }, user.id);
 
   return {

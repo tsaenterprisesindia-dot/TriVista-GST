@@ -8,7 +8,7 @@ const inr = (n) =>
 
 const ABS = ['Purchase Bills', 'Journal', 'Ledger', 'Trial Balance', 'P&L', 'Balance Sheet', 'Cash & Bank', 'Day Book', 'Chart of Accounts'];
 
-const lineEmpty = () => ({ product_id: '', item_name: '', quantity: 1, unit_price: '', gst_rate: '', discount: 0, batch_no: '', expiry_date: '', serial_numbers: '' });
+const lineEmpty = () => ({ product_id: '', item_name: '', quantity: 1, unit_price: '', gst_rate: '', cess_rate: '', discount: 0, batch_no: '', expiry_date: '', serial_numbers: '' });
 const jLineEmpty = () => ({ account_id: '', debit: '', credit: '' });
 const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
 
@@ -127,7 +127,7 @@ export default function Accounting() {
       if (k === 'product_id') {
         const p = products.find((p) => String(p.id) === String(v));
         if (p) {
-          items[i] = { ...items[i], product_id: v, item_name: p.name, gst_rate: p.gst_rate, unit_price: p.purchase_price || p.selling_price };
+          items[i] = { ...items[i], product_id: v, item_name: p.name, gst_rate: p.gst_rate, cess_rate: p.cess_rate || '', unit_price: p.purchase_price || p.selling_price };
         }
       }
       return { ...f, items };
@@ -349,6 +349,10 @@ export default function Accounting() {
                     <div className="field">
                       <label>GST %</label>
                       <input type="number" step="0.01" value={it.gst_rate} onChange={setItem(i, 'gst_rate')} />
+                    </div>
+                    <div className="field">
+                      <label>Cess %</label>
+                      <input type="number" step="0.01" value={it.cess_rate} onChange={setItem(i, 'cess_rate')} placeholder="compensation cess" />
                     </div>
                     <div className="field">
                       <label>Discount</label>

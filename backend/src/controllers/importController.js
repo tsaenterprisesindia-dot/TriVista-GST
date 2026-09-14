@@ -72,9 +72,9 @@ async function bulk(req, res, next) {
           if (h.length) hsnId = h[0].id;
           else {
             const [hs] = await pool.query(
-              `INSERT INTO hsn_sac_codes (code,description,type,gst_rate,cgst_rate,sgst_rate,igst_rate)
-               VALUES (?,?,'HSN',?,?,?,?)`,
-              [hsnCode, r.description || name, gstRate, gstRate / 2, gstRate / 2, gstRate]
+              `INSERT INTO hsn_sac_codes (code,description,type,gst_rate,cgst_rate,sgst_rate,igst_rate,cess_rate)
+               VALUES (?,?,'HSN',?,?,?,?,?)`,
+              [hsnCode, r.description || name, gstRate, gstRate / 2, gstRate / 2, gstRate, Number(r.cess_rate) || 0]
             );
             hsnId = hs.insertId;
           }
@@ -90,12 +90,12 @@ async function bulk(req, res, next) {
           }
           const [ins] = await pool.query(
             `INSERT INTO products
-             (sku,barcode,name,description,category_id,hsn_id,hsn_code,gst_rate,unit,
+             (sku,barcode,name,description,category_id,hsn_id,hsn_code,gst_rate,cess_rate,unit,
               selling_price,wholesale_price,purchase_price,mrp,min_stock,weight_kg,is_service,is_active)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [
               r.sku || null, r.barcode || null, name, r.description || null, categoryId, hsnId,
-              hsnCode, gstRate, String(r.unit || 'PCS').toUpperCase().slice(0, 5),
+              hsnCode, gstRate, r.cess_rate === undefined ? null : Number(r.cess_rate) || 0, String(r.unit || 'PCS').toUpperCase().slice(0, 5),
               Number(r.selling_price) || 0, r.wholesale_price || null, Number(r.purchase_price) || 0, r.mrp || null,
               r.min_stock || null, r.weight_kg || null, r.is_service ? 1 : 0,
               r.is_active === undefined ? 1 : r.is_active ? 1 : 0,
@@ -124,6 +124,7 @@ async function bulk(req, res, next) {
                 code,
                 effectiveFrom: new Date().toISOString().slice(0, 10),
                 gstRate: rate,
+                cessRate: r.cess_rate === undefined ? undefined : Number(r.cess_rate) || 0,
                 source: 'CSV import',
                 notes: dup[0].description || null,
                 createdBy: req.user.id,
@@ -131,15 +132,17 @@ async function bulk(req, res, next) {
             }
             await pool.query(
               `UPDATE hsn_sac_codes SET description=COALESCE(?,description), type=COALESCE(?,type),
-                gst_rate=?, cgst_rate=?, sgst_rate=?, igst_rate=? WHERE id=?`,
-              [r.description || null, r.type || null, rate, rate / 2, rate / 2, rate, dup[0].id]
+                gst_rate=?, cgst_rate=?, sgst_rate=?, igst_rate=?, cess_rate=COALESCE(?,cess_rate) WHERE id=?`,
+              [r.description || null, r.type || null, rate, rate / 2, rate / 2, rate,
+               r.cess_rate === undefined ? null : Number(r.cess_rate) || 0, dup[0].id]
             );
             hsnId = dup[0].id;
           } else {
             const [ins] = await pool.query(
-              `INSERT INTO hsn_sac_codes (code,description,type,gst_rate,cgst_rate,sgst_rate,igst_rate)
-               VALUES (?,?,?,?,?,?,?)`,
-              [code, r.description || null, r.type || 'HSN', rate, rate / 2, rate / 2, rate]
+              `INSERT INTO hsn_sac_codes (code,description,type,gst_rate,cgst_rate,sgst_rate,igst_rate,cess_rate)
+               VALUES (?,?,?,?,?,?,?,?)`,
+              [code, r.description || null, r.type || 'HSN', rate, rate / 2, rate / 2, rate,
+               r.cess_rate === undefined ? 0 : Number(r.cess_rate) || 0]
             );
             hsnId = ins.insertId;
           }

@@ -98,6 +98,7 @@ export default function POS() {
         ...prev,
         {
           product_id: p.id, item_name: p.name, hsn_code: p.hsn_code, gst_rate: Number(p.gst_rate) || 0,
+          cess_rate: Number(p.cess_rate) || 0,
           quantity: 1, unit_price: rate, discount: 0,
         },
       ];
@@ -126,7 +127,11 @@ export default function POS() {
   const removeLast = () => setItems((prev) => prev.slice(0, -1));
 
   const calc = useMemo(() => {
-    let subtotal = 0, discount = 0, taxable = 0, tax = 0, cgst = 0, sgst = 0, igst = 0;
+    const cust = customers.find((c) => String(c.id) === String(customerId));
+    const coState = String(company?.state_code || '29');
+    const posIsInterstate = !!cust?.state_code && String(cust.state_code) !== coState;
+    const posIsUt = ['04','26','34','38'].includes(coState);
+    let subtotal = 0, discount = 0, taxable = 0, tax = 0, cgst = 0, sgst = 0, utgst = 0, igst = 0, cess = 0;
     items.forEach((it) => {
       const gross = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
       const disc = Math.max(0, Number(it.discount) || 0);
@@ -135,10 +140,12 @@ export default function POS() {
       discount += disc;
       taxable += tv;
       const t = (tv * (Number(it.gst_rate) || 0)) / 100;
-      cgst += r2(t / 2);
-      sgst += r2(t / 2);
-      igst += r2(t);
-      tax += r2(t);
+      const cs = (tv * (Number(it.cess_rate) || 0)) / 100;
+      if (posIsInterstate) { igst += r2(t); cgst += 0; sgst += 0; utgst += 0; }
+      else if (posIsUt) { cgst += r2(t / 2); utgst += r2(t / 2); sgst += 0; igst += 0; }
+      else { cgst += r2(t / 2); sgst += r2(t / 2); utgst += 0; igst += 0; }
+      cess += r2(cs);
+      tax += r2(t + cs);
     });
     return {
       subtotal: r2(subtotal),
@@ -147,10 +154,12 @@ export default function POS() {
       tax: r2(tax),
       cgst: r2(cgst),
       sgst: r2(sgst),
+      utgst: r2(utgst),
       igst: r2(igst),
+      cess: r2(cess),
       grand: r2(taxable + tax),
     };
-  }, [items]);
+  }, [items, customerId, customers, company]);
 
   const target = r2(Number(company?.round_off) === 1 ? Math.round(calc.grand) : calc.grand);
   const roundOff = r2(target - calc.grand);
@@ -186,6 +195,7 @@ export default function POS() {
           item_name: it.item_name,
           hsn_code: it.hsn_code,
           gst_rate: it.gst_rate,
+          cess_rate: it.cess_rate || 0,
           quantity: it.quantity,
           unit: 'PCS',
           unit_price: it.unit_price,
@@ -429,6 +439,7 @@ export default function POS() {
                   <th className="right">Rate</th>
                   <th className="right">Disc</th>
                   <th className="right">GST%</th>
+                  <th className="right">Cess%</th>
                   <th className="right">Amount</th>
                   <th></th>
                 </tr>
@@ -445,6 +456,7 @@ export default function POS() {
                       <input type="number" min="0" step="any" value={it.discount ?? 0} onChange={(e) => setDisc(idx, e.target.value)} style={{ width: 60, textAlign: 'right' }} />
                     </td>
                     <td className="right">{it.gst_rate}%</td>
+                    <td className="right">{+it.cess_rate > 0 ? `${it.cess_rate}%` : '–'}</td>
                     <td className="right nowrap">
                       {inr(Math.max(0, (Number(it.quantity) || 0) * (Number(it.unit_price) || 0) - (Number(it.discount) || 0)))}
                     </td>
@@ -458,7 +470,15 @@ export default function POS() {
           <div className="row mt"><div className="muted">Subtotal</div><div className="right nowrap">{inr(calc.subtotal)}</div></div>
           {calc.discount > 0 && <div className="row"><div className="muted">Discount</div><div className="right nowrap">− {inr(calc.discount)}</div></div>}
           <div className="row"><div className="muted">Taxable</div><div className="right nowrap">{inr(calc.taxable)}</div></div>
-          <div className="row"><div className="muted">GST (CGST {inr(calc.cgst)} + SGST {inr(calc.sgst)})</div><div className="right nowrap">{inr(calc.tax)}</div></div>
+          <div className="row">
+            <div className="muted">
+              {calc.cgst > 0 ? (calc.utgst > 0 ? `GST (CGST ${inr(calc.cgst)} + UTGST ${inr(calc.utgst)})` : calc.igst > 0 ? `IGST ${inr(calc.igst)} (interstate)` : `GST (CGST ${inr(calc.cgst)} + SGST ${inr(calc.sgst)})`) : `IGST ${inr(calc.igst)} (interstate)`}
+            </div>
+            <div className="right nowrap">{inr(calc.igst || (calc.cgst + calc.sgst + calc.utgst))}</div>
+          </div>
+          {calc.cess > 0 && (
+            <div className="row"><div className="muted">Compensation Cess</div><div className="right nowrap">{inr(calc.cess)}</div></div>
+          )}
           {roundOff !== 0 && (
             <div className="row"><div className="muted">Round off</div><div className="right nowrap">{inr(roundOff)}</div></div>
           )}

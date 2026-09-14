@@ -54,7 +54,7 @@ async function list(req, res, next) {
 
     const [rows] = await pool.query(
       `SELECT p.id,p.sku,p.barcode,p.name,p.description,p.category_id,c.name AS category_name,
-              p.hsn_code,p.hsn_id,p.gst_rate,p.unit,p.selling_price,p.wholesale_price,p.purchase_price,p.mrp,p.min_stock,
+              p.hsn_code,p.hsn_id,p.gst_rate,p.cess_rate,p.unit,p.selling_price,p.wholesale_price,p.purchase_price,p.mrp,p.min_stock,
               p.track_batch,p.track_serial,p.weight_kg,p.is_service,p.is_active,p.created_at,
               IFNULL((SELECT SUM(
                  CASE WHEN sm.type='IN' THEN sm.quantity
@@ -105,21 +105,21 @@ async function create(req, res, next) {
       else {
         const rate = Number(b.gst_rate) || 0;
         const [hs] = await pool.query(
-          `INSERT INTO hsn_sac_codes (code,description,type,gst_rate,cgst_rate,sgst_rate,igst_rate)
-           VALUES (?,?,'HSN',?,?,?,?)`,
-          [b.hsn_code, b.name, rate, rate/2, rate/2, rate]
+          `INSERT INTO hsn_sac_codes (code,description,type,gst_rate,cgst_rate,sgst_rate,igst_rate,cess_rate)
+           VALUES (?,?,'HSN',?,?,?,?,?)`,
+          [b.hsn_code, b.name, rate, rate/2, rate/2, rate, Number(b.cess_rate) || 0]
         );
         hsnId = hs.insertId;
       }
     }
     const [r] = await pool.query(
       `INSERT INTO products
-       (sku,barcode,name,description,category_id,hsn_id,hsn_code,gst_rate,unit,
+       (sku,barcode,name,description,category_id,hsn_id,hsn_code,gst_rate,cess_rate,unit,
         selling_price,wholesale_price,purchase_price,mrp,min_stock,track_batch,track_serial,weight_kg,is_service,is_active)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         b.sku || null, b.barcode || null, b.name, b.description || null, b.category_id || null, hsnId,
-        b.hsn_code, Number(b.gst_rate) || 0, b.unit || 'PCS',
+        b.hsn_code, Number(b.gst_rate) || 0, b.cess_rate === undefined ? null : Number(b.cess_rate) || 0, b.unit || 'PCS',
         Number(b.selling_price) || 0, b.wholesale_price || null, b.purchase_price ?? null, b.mrp || null,
         b.min_stock || null, b.track_batch ? 1 : 0, b.track_serial ? 1 : 0, b.weight_kg || null, b.is_service ? 1 : 0, b.is_active === undefined ? 1 : b.is_active ? 1 : 0,
       ]
@@ -152,7 +152,7 @@ async function update(req, res, next) {
     const id = Number(req.params.id);
     const b = req.body || {};
     const pool = getPool();
-    const allowed = ['sku','barcode','name','description','category_id','hsn_id','hsn_code','gst_rate','unit','selling_price','wholesale_price','purchase_price','mrp','min_stock','track_batch','track_serial','weight_kg','is_service','is_active'];
+    const allowed = ['sku','barcode','name','description','category_id','hsn_id','hsn_code','gst_rate','cess_rate','unit','selling_price','wholesale_price','purchase_price','mrp','min_stock','track_batch','track_serial','weight_kg','is_service','is_active'];
     const sets = [];
     const params = [];
     for (const f of allowed) {

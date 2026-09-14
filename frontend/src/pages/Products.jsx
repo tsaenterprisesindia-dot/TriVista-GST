@@ -13,6 +13,7 @@ const empty = {
   category_id: '',
   hsn_code: '',
   gst_rate: '',
+  cess_rate: '',
   unit: 'PCS',
   selling_price: '',
   wholesale_price: '',
@@ -76,7 +77,7 @@ export default function Products() {
 
   const onHsnSelect = () => {
     const hit = hsnOptions.find((h) => h.code === form.hsn_code);
-    if (hit) setForm((f) => ({ ...f, gst_rate: hit.gst_rate }));
+    if (hit) setForm((f) => ({ ...f, gst_rate: hit.gst_rate, cess_rate: hit.cess_rate }));
   };
 
   const openNew = () => {
@@ -95,6 +96,7 @@ export default function Products() {
       category_id: p.category_id ? String(p.category_id) : '',
       hsn_code: p.hsn_code,
       gst_rate: p.gst_rate,
+      cess_rate: p.cess_rate || '',
       unit: p.unit,
       selling_price: p.selling_price,
       wholesale_price: p.wholesale_price,
@@ -205,6 +207,10 @@ export default function Products() {
                 <input value={form.gst_rate} onChange={set('gst_rate')} type="number" step="0.01" />
               </div>
               <div className="field">
+                <label>Cess %</label>
+                <input value={form.cess_rate} onChange={set('cess_rate')} type="number" step="0.01" placeholder="compensation cess" />
+              </div>
+              <div className="field">
                 <label>Unit</label>
                 <input value={form.unit} onChange={set('unit')} />
               </div>
@@ -283,6 +289,7 @@ export default function Products() {
                 <th>Category</th>
                 <th>HSN</th>
                 <th>GST%</th>
+                <th>Cess%</th>
                 <th>Unit</th>
                 <th className="right">Selling</th>
                 <th className="right">Wholesale</th>
@@ -301,6 +308,7 @@ export default function Products() {
                   <td>{p.category_name || '—'}</td>
                   <td className="nowrap">{p.hsn_code || '—'}</td>
                   <td>{p.gst_rate}%</td>
+                  <td>{Number(p.cess_rate) > 0 ? `${p.cess_rate}%` : '—'}</td>
                   <td>{p.unit}</td>
                   <td className="right nowrap">{inr(p.selling_price)}</td>
                   <td className="right nowrap">{p.wholesale_price ? inr(p.wholesale_price) : '—'}</td>

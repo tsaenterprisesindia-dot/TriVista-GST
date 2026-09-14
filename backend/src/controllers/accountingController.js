@@ -46,23 +46,39 @@ async function createPurchase(req, res, next) {
 
     let subtotal = 0, discountTotal = 0, cgstTotal = 0, sgstTotal = 0, utgstTotal = 0, igstTotal = 0, cessTotal = 0, taxTotal = 0, grandTotal = 0;
     const purchaseMoveIds = [];
+    const pnameMap = new Map();
     let itemRates = [];
 
     for (const it of b.items) {
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.unit_price) || 0;
       const disc = Number(it.discount) || 0;
+      // Product master carries the HSN/SAC when the line omits it (API consumers).
+      let itemHsn = it.hsn_code || null;
+      let productCess = undefined;
+      if (it.product_id) {
+        const [p] = await conn.query('SELECT name, hsn_code, cess_rate FROM products WHERE id=?', [it.product_id]);
+        if (p.length) {
+          pnameMap.set(Number(it.product_id), p[0].name);
+          itemHsn = itemHsn || p[0].hsn_code || null;
+          if (p[0].cess_rate != null) productCess = Number(p[0].cess_rate) || 0;
+        }
+      }
       // Effective-dated rate for the HSN/SAC on the bill date.
       const resolved = await resolveRateForDate(conn, {
-        hsnCode: it.hsn_code,
+        hsnCode: itemHsn,
         date: billDate,
         fallbackRate: Number(it.gst_rate) || 0,
       });
       const gstRate = resolved.gst_rate;
-      itemRates.push(gstRate);
+      // Cess precedence: client line > product override > dated HSN history.
+      const cessRate = it.cess_rate !== undefined
+        ? Number(it.cess_rate) || 0
+        : productCess !== undefined ? productCess : Number(resolved.cess_rate) || 0;
+      itemRates.push({ gst: gstRate, cess: cessRate, hsn: itemHsn });
       const gross = qty * rate;
       const taxableValue = gross - disc;
-      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
+      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState, cessRate);
 
       subtotal += gross;
       discountTotal += disc;
@@ -148,9 +164,10 @@ async function createPurchase(req, res, next) {
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.unit_price) || 0;
       const disc = Number(it.discount) || 0;
-      const gstRate = itemRates[idx] || Number(it.gst_rate) || 0;
+      const gstRate = (itemRates[idx]?.gst ?? Number(it.gst_rate)) || 0;
+      const cessRate = itemRates[idx]?.cess ?? 0;
       const taxableValue = qty * rate - disc;
-      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState);
+      const tax = splitGst(taxableValue, gstRate, placeOfSupply, companyState, cessRate);
       const pid = it.product_id || (
         (await conn.query("SELECT id FROM products WHERE name=? LIMIT 1", [it.item_name]))[0]?.[0]?.id || null
       );
@@ -159,7 +176,7 @@ async function createPurchase(req, res, next) {
          (bill_id,product_id,item_name,hsn_code,gst_rate,quantity,unit,unit_price,discount,
           taxable_value,cgst_amount,sgst_amount,utgst_amount,igst_amount,cess_amount,total)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [billId, pid, it.item_name, it.hsn_code || null, gstRate, qty, it.unit || 'PCS', rate, disc,
+        [billId, pid, it.item_name ?? pnameMap.get(Number(it.product_id)) ?? null, itemRates[idx]?.hsn || null, gstRate, qty, it.unit || 'PCS', rate, disc,
          round2(taxableValue), tax.cgst, tax.sgst, tax.utgst, tax.igst, tax.cess,
          round2(taxableValue + tax.cgst + tax.sgst + tax.utgst + tax.igst + tax.cess)]
       );
@@ -197,6 +214,7 @@ async function createPurchase(req, res, next) {
       sgst_total: round2(sgstTotal),
       utgst_total: round2(utgstTotal),
       igst_total: round2(igstTotal),
+      cess_total: round2(cessTotal),
       grand_total: round2(grandTotal),
       is_rcm: isRcm ? 1 : 0,
     }, req.user.id);

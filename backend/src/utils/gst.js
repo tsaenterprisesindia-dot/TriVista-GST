@@ -5,8 +5,9 @@
  */
 
 // Union territory state codes; intra-state supplies in these have no SGST —
-// CGST + UTGST apply instead.
-const UT_STATE_CODES = new Set(['04', '26', '38']);
+// CGST + UTGST apply instead. Community: 04 (Andaman & Nicobar), 26 (Dadra &
+// Nagar Haveli + Daman & Diu), 34 (Puducherry), 38 (Lakshadweep).
+const UT_STATE_CODES = new Set(['04', '26', '34', '38']);
 
 /**
  * Calculate tax on a line amount.
@@ -14,14 +15,19 @@ const UT_STATE_CODES = new Set(['04', '26', '38']);
  *  - { isInterstate:true, igst }                when buyer state != seller state
  *  - { isInterstate:false, cgst, sgst }         when buyer state == seller state and seller is not a UT
  *  - { isInterstate:false, cgst, utgst }        when buyer state == seller UT state
+ * Cess (Compensation Cess under clause 52 of the GST (Compensation to States)
+ * Act 2017) applies at the same rate on intra-state AND inter-state supplies,
+ * so it is never halved or zeroed by state-ness.
  * @param {number} amount - taxable value (before tax)
  * @param {number} gstRate - total GST % (e.g. 18)
  * @param {string|null} placeOfSupply - 2-digit state code of buyer
  * @param {string|null} companyStateCode - 2-digit state code of seller
+ * @param {number} cessRate - Compensation Cess % (default 0)
  */
-function splitGst(amount, gstRate, placeOfSupply, companyStateCode) {
+function splitGst(amount, gstRate, placeOfSupply, companyStateCode, cessRate) {
   const a = Number(amount) || 0;
   const r = Number(gstRate) || 0;
+  const cess = round2((a * (Number(cessRate) || 0)) / 100);
   const isInterstate =
     !!placeOfSupply && !!companyStateCode && placeOfSupply !== companyStateCode;
 
@@ -32,7 +38,7 @@ function splitGst(amount, gstRate, placeOfSupply, companyStateCode) {
       cgst: 0,
       sgst: 0,
       utgst: 0,
-      cess: 0,
+      cess,
     };
   }
   const half = r / 2;
@@ -43,7 +49,7 @@ function splitGst(amount, gstRate, placeOfSupply, companyStateCode) {
     cgst: round2((a * half) / 100),
     sgst: isUt ? 0 : round2((a * half) / 100),
     utgst: isUt ? round2((a * half) / 100) : 0,
-    cess: 0,
+    cess,
   };
 }
 
