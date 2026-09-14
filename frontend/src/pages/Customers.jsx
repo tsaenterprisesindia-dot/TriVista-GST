@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ImportCsv from '../components/ImportCsv';
 
@@ -48,6 +49,7 @@ const catBadge = (c) => {
 };
 
 export default function Customers() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState('');
@@ -325,6 +327,7 @@ export default function Customers() {
                     {c.is_active ? <span className="badge badge-green">ACTIVE</span> : <span className="badge badge-gray">INACTIVE</span>}
                   </td>
                   <td className="nowrap">
+                    <button className="btn btn-sm" onClick={() => navigate(`/customers/${c.id}`)}>View</button>{' '}
                     <button className="btn btn-sm" onClick={() => openEdit(c)}>Edit</button>{' '}
                     <button className="btn btn-sm btn-danger" onClick={() => remove(c)}>Delete</button>
                   </td>

@@ -127,6 +127,48 @@ async function update(req, res, next) {
   }
 }
 
+async function history(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    const pool = getPool();
+    const [cust] = await pool.query('SELECT * FROM customers WHERE id=?', [id]);
+    if (!cust.length) return res.status(404).json({ error: 'Customer not found.' });
+
+    const [sum] = await pool.query(
+      `SELECT
+         COUNT(*) AS invoice_count,
+         IFNULL(SUM(subtotal),0) AS total_sales,
+         IFNULL(SUM(tax_total),0) AS total_gst,
+         IFNULL(SUM(grand_total),0) AS total_billed,
+         IFNULL(SUM(paid_amount),0) AS total_paid,
+         IFNULL(SUM(balance_due),0) AS total_due,
+         MIN(invoice_date) AS first_invoice_date,
+         MAX(invoice_date) AS last_invoice_date
+       FROM invoices WHERE customer_id=? AND status<>'CANCELLED'`,
+      [id]
+    );
+
+    const [invoices] = await pool.query(
+      `SELECT id,invoice_number,invoice_date,invoice_type,status,is_interstate,subtotal,discount,
+              cgst_total,sgst_total,utgst_total,igst_total,cess_total,tax_total,round_off,grand_total,
+              paid_amount,balance_due,payment_mode,tcs_amount,notes,created_at,against_invoice_no
+       FROM invoices WHERE customer_id=? ORDER BY invoice_date DESC, id DESC
+       LIMIT 500`,
+      [id]
+    );
+
+    const [payments] = await pool.query(
+      `SELECT id,date,amount,mode,reference_no,note FROM payments
+       WHERE customer_id=? ORDER BY date DESC, id DESC LIMIT 500`,
+      [id]
+    );
+
+    res.json({ customer: cust[0], summary: sum[0], invoices, payments });
+  } catch (e) {
+    next(e);
+  }
+}
+
 async function remove(req, res, next) {
   try {
     const [c] = await getPool().query('SELECT name FROM customers WHERE id=?', [Number(req.params.id)]);
@@ -149,4 +191,4 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { list, get, create, update, remove };
+module.exports = { list, get, create, update, remove, history };

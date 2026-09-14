@@ -11,6 +11,7 @@ import POSShortcuts from './pages/POSShortcuts';
 import Products from './pages/Products';
 import Inventory from './pages/Inventory';
 import Customers from './pages/Customers';
+import CustomerView from './pages/CustomerView';
 import Vendors from './pages/Vendors';
 import Recurring from './pages/Recurring';
 import Reports from './pages/Reports';
@@ -63,6 +64,7 @@ function App() {
         <Route path="products" element={<Products />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="customers" element={<Customers />} />
+        <Route path="customers/:id" element={<CustomerView />} />
         <Route path="vendors" element={<Vendors />} />
         <Route path="recurring" element={<Recurring />} />
         <Route path="reports" element={<Reports />} />
