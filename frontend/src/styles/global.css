@@ -113,6 +113,13 @@ tr:hover td { background: #fafbff; }
 .sidebar .brand .brand-name > span { color: #7dd3fc; }
 .sidebar .brand .unit { width: 100%; display: block; font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: #7dd3fc; opacity: .75; }
 .sidebar-nav { flex: 1; overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.85) rgba(255,255,255,0.06); }
+.sidebar-nav::after { content: ''; display: block; height: 8px; }
+.nav-group { margin-top: 6px; }
+.nav-group:first-child { margin-top: 0; }
+.nav-group-title {
+  padding: 8px 20px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #7dd3fc; opacity: 0.55;
+}
 .sidebar-nav::-webkit-scrollbar { width: 16px; }
 .sidebar-nav::-webkit-scrollbar-track { background: rgba(255,255,255,0.06); border-radius: 6px; }
 .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.85); border: 2px solid #0f1a33; border-radius: 6px; }

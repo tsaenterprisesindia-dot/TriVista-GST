@@ -4,34 +4,64 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import NotificationBell from './NotificationBell';
 
-const allNavItems = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/pos', label: 'POS', hideForViewer: true, feature: 'pos' },
-  { to: '/pos/shortcuts', label: 'POS Shortcuts', feature: 'pos' },
-  { to: '/billing', label: 'New Invoice', hideForViewer: true, feature: 'billing' },
-  { to: '/invoices', label: 'Invoices', feature: 'billing' },
-  { to: '/returns', label: 'Returns', feature: 'returns' },
-  { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true, feature: 'products' },
-  { to: '/inventory', label: 'Inventory', hideForServices: true, hideForViewer: true, feature: 'inventory' },
-  { to: '/customers', label: 'Customers', hideForViewer: true, feature: 'customers' },
-  { to: '/vendors', label: 'Vendors', hideForViewer: true, feature: 'vendors' },
-  { to: '/recurring', label: 'Recurring', hideForViewer: true, feature: 'recurring' },
-  { to: '/accounting', label: 'Accounting', hideForViewer: true, feature: 'accounting' },
-  { to: '/reports', label: 'GST Reports', feature: 'gstReports' },
-  { to: '/review', label: 'Month Review', feature: 'gstReports' },
-  { to: '/reconciliation', label: 'Reconciliation', feature: 'reconciliation' },
-  { to: '/integration', label: 'e-Invoice / e-Way', feature: 'integration' },
-  { to: '/assistant', label: 'AI Assistant', hideForViewer: true, feature: 'assistant' },
-  { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true, feature: 'apiKeys' },
-  { to: '/audit', label: 'Audit Log', hl: true, feature: 'audit' },
-  { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
-  { to: '/tax-rates', label: 'GST Rates', hl: true, feature: 'gstReports' },
-  { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true, feature: 'users' },
-  { to: '/support', label: 'Support & Feedback' },
-  { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true, feature: 'licensing' },
-  { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true, feature: 'paymentLinks' },
-  { to: '/account', label: 'My Account' },
-  { to: '/agreement', label: 'Terms & Conditions' },
+const navGroups = [
+  {
+    title: 'Main',
+    items: [
+      { to: '/', label: 'Dashboard', end: true },
+    ],
+  },
+  {
+    title: 'Sales',
+    items: [
+      { to: '/pos', label: 'POS', hideForViewer: true, feature: 'pos' },
+      { to: '/pos/shortcuts', label: 'POS Shortcuts', feature: 'pos' },
+      { to: '/billing', label: 'New Invoice', hideForViewer: true, feature: 'billing' },
+      { to: '/invoices', label: 'Invoices', feature: 'billing' },
+      { to: '/returns', label: 'Returns', feature: 'returns' },
+      { to: '/recurring', label: 'Recurring', hideForViewer: true, feature: 'recurring' },
+      { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true, feature: 'paymentLinks' },
+    ],
+  },
+  {
+    title: 'Inventory & Parties',
+    items: [
+      { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true, feature: 'products' },
+      { to: '/inventory', label: 'Inventory', hideForServices: true, hideForViewer: true, feature: 'inventory' },
+      { to: '/customers', label: 'Customers', hideForViewer: true, feature: 'customers' },
+      { to: '/vendors', label: 'Vendors', hideForViewer: true, feature: 'vendors' },
+    ],
+  },
+  {
+    title: 'Finance & Reports',
+    items: [
+      { to: '/accounting', label: 'Accounting', hideForViewer: true, feature: 'accounting' },
+      { to: '/reconciliation', label: 'Reconciliation', feature: 'reconciliation' },
+      { to: '/review', label: 'Month Review', feature: 'gstReports' },
+      { to: '/reports', label: 'GST Reports', feature: 'gstReports' },
+      { to: '/tax-rates', label: 'GST Rates', hl: true, feature: 'gstReports' },
+      { to: '/integration', label: 'e-Invoice / e-Way', feature: 'integration' },
+    ],
+  },
+  {
+    title: 'Administration',
+    items: [
+      { to: '/assistant', label: 'AI Assistant', hideForViewer: true, feature: 'assistant' },
+      { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true, feature: 'apiKeys' },
+      { to: '/audit', label: 'Audit Log', hl: true, feature: 'audit' },
+      { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true, feature: 'users' },
+      { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true, feature: 'licensing' },
+      { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
+    ],
+  },
+  {
+    title: 'Account',
+    items: [
+      { to: '/account', label: 'My Account' },
+      { to: '/support', label: 'Support & Feedback' },
+      { to: '/agreement', label: 'Terms & Conditions' },
+    ],
+  },
 ];
 
 const modelLabel = (m) =>
@@ -64,13 +94,15 @@ export default function Layout() {
     navigate('/login');
   };
 
-  const navItems = allNavItems.filter(
-    (it) =>
-      !(it.hideForServices && bizType === 'services') &&
-      !(it.hideForViewer && user?.role === 'VIEWER') &&
-      !(it.superAdminOnly && user?.role !== 'SUPER_ADMIN') &&
-      (it.feature ? features[it.feature] !== false : true)
-  );
+  const visible = (item) =>
+    !(item.hideForServices && bizType === 'services') &&
+    !(item.hideForViewer && user?.role === 'VIEWER') &&
+    !(item.superAdminOnly && user?.role !== 'SUPER_ADMIN') &&
+    (item.feature ? features[item.feature] !== false : true);
+
+  const navGroupsVisible = navGroups
+    .map((g) => ({ title: g.title, items: g.items.filter(visible) }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <div className="layout">
@@ -81,18 +113,23 @@ export default function Layout() {
           <span className="unit">A Unit of TSA Enterprises</span>
         </div>
         <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              title={item.label}
-              className={({ isActive }) =>
-                [item.hl ? 'hl' : '', isActive ? 'active' : ''].filter(Boolean).join(' ') || undefined
-              }
-            >
-              {item.label}
-            </NavLink>
+          {navGroupsVisible.map((group) => (
+            <div className="nav-group" key={group.title}>
+              <div className="nav-group-title">{group.title}</div>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  title={item.label}
+                  className={({ isActive }) =>
+                    [item.hl ? 'hl' : '', isActive ? 'active' : ''].filter(Boolean).join(' ') || undefined
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="spacer" />
