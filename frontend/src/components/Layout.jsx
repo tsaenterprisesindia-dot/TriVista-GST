@@ -6,48 +6,54 @@ import NotificationBell from './NotificationBell';
 
 const allNavItems = [
   { to: '/', label: 'Dashboard', end: true },
-  { to: '/pos', label: 'POS', hideForViewer: true },
-  { to: '/pos/shortcuts', label: 'POS Shortcuts' },
-  { to: '/billing', label: 'New Invoice', hideForViewer: true },
-  { to: '/invoices', label: 'Invoices' },
-  { to: '/returns', label: 'Returns' },
-  { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true },
-  { to: '/inventory', label: 'Inventory', hideForServices: true, hideForViewer: true },
-  { to: '/customers', label: 'Customers', hideForViewer: true },
-  { to: '/vendors', label: 'Vendors', hideForViewer: true },
-  { to: '/recurring', label: 'Recurring', hideForViewer: true },
-  { to: '/accounting', label: 'Accounting', hideForViewer: true },
-  { to: '/reports', label: 'GST Reports' },
-  { to: '/review', label: 'Month Review' },
-  { to: '/reconciliation', label: 'Reconciliation' },
-  { to: '/integration', label: 'e-Invoice / e-Way' },
-  { to: '/assistant', label: 'AI Assistant', hideForViewer: true },
-  { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true },
-  { to: '/audit', label: 'Audit Log', hl: true },
+  { to: '/pos', label: 'POS', hideForViewer: true, feature: 'pos' },
+  { to: '/pos/shortcuts', label: 'POS Shortcuts', feature: 'pos' },
+  { to: '/billing', label: 'New Invoice', hideForViewer: true, feature: 'billing' },
+  { to: '/invoices', label: 'Invoices', feature: 'billing' },
+  { to: '/returns', label: 'Returns', feature: 'returns' },
+  { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true, feature: 'products' },
+  { to: '/inventory', label: 'Inventory', hideForServices: true, hideForViewer: true, feature: 'inventory' },
+  { to: '/customers', label: 'Customers', hideForViewer: true, feature: 'customers' },
+  { to: '/vendors', label: 'Vendors', hideForViewer: true, feature: 'vendors' },
+  { to: '/recurring', label: 'Recurring', hideForViewer: true, feature: 'recurring' },
+  { to: '/accounting', label: 'Accounting', hideForViewer: true, feature: 'accounting' },
+  { to: '/reports', label: 'GST Reports', feature: 'gstReports' },
+  { to: '/review', label: 'Month Review', feature: 'gstReports' },
+  { to: '/reconciliation', label: 'Reconciliation', feature: 'reconciliation' },
+  { to: '/integration', label: 'e-Invoice / e-Way', feature: 'integration' },
+  { to: '/assistant', label: 'AI Assistant', hideForViewer: true, feature: 'assistant' },
+  { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true, feature: 'apiKeys' },
+  { to: '/audit', label: 'Audit Log', hl: true, feature: 'audit' },
   { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
-  { to: '/tax-rates', label: 'GST Rates', hl: true },
-  { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true },
+  { to: '/tax-rates', label: 'GST Rates', hl: true, feature: 'gstReports' },
+  { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true, feature: 'users' },
   { to: '/support', label: 'Support & Feedback' },
-  { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true },
-  { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true },
+  { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true, feature: 'licensing' },
+  { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true, feature: 'paymentLinks' },
   { to: '/account', label: 'My Account' },
   { to: '/agreement', label: 'Terms & Conditions' },
 ];
 
-const labelFor = (t) =>
-  ({ retail: 'Products (Retail)', wholesale: 'Products (Wholesale)', services: 'Services', mixed: 'Products & Services' }[t] || 'Products & Services');
+const modelLabel = (m) =>
+  ({ general: 'General Business', manufacturing: 'Manufacturing', import_export: 'Import & Export' }[m] || 'General Business');
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [bizType, setBizType] = useState('mixed');
+  const [model, setModel] = useState('general');
+  const [features, setFeatures] = useState({});
   const [bizLoaded, setBizLoaded] = useState(false);
 
   useEffect(() => {
-    api
-      .get('/company')
-      .then((d) => {
-        if (d.business_type) setBizType(d.business_type);
+    Promise.all([
+      api.get('/model/features').catch(() => null),
+      api.get('/company').catch(() => null),
+    ])
+      .then(([f, c]) => {
+        if (c && c.business_type) setBizType(c.business_type);
+        if (f && f.business_model) setModel(f.business_model);
+        if (f && f.features) setFeatures(f.features);
       })
       .catch(() => {})
       .finally(() => setBizLoaded(true));
@@ -62,7 +68,8 @@ export default function Layout() {
     (it) =>
       !(it.hideForServices && bizType === 'services') &&
       !(it.hideForViewer && user?.role === 'VIEWER') &&
-      !(it.superAdminOnly && user?.role !== 'SUPER_ADMIN')
+      !(it.superAdminOnly && user?.role !== 'SUPER_ADMIN') &&
+      (it.feature ? features[it.feature] !== false : true)
   );
 
   return (
@@ -90,7 +97,7 @@ export default function Layout() {
         </nav>
         <div className="spacer" />
         {bizLoaded && (
-          <div className="biz-badge" title="Business type (change in Settings)">{labelFor(bizType)}</div>
+          <div className="biz-badge" title="Business model (change in Settings)">{modelLabel(model)}</div>
         )}
         <a href="#logout" className="logout hl" onClick={(e) => { e.preventDefault(); handleLogout(); }}>
           Logout

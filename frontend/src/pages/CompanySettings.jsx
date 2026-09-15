@@ -29,6 +29,7 @@ const fields = [
   'gst_tax_preference',
   'round_off',
   'business_type',
+  'business_model',
   'e_invoice_enabled',
   'aggregate_turnover_crores',
   'apply_tds',
@@ -61,6 +62,8 @@ export default function CompanySettings() {
   const [brForm, setBrForm] = useState({});
   const [editingBr, setEditingBr] = useState(null);
   const [brMsg, setBrMsg] = useState('');
+  const [packs, setPacks] = useState({ models: [], features: [] });
+  const [featForm, setFeatForm] = useState({});
 
   useEffect(() => {
     api
@@ -91,6 +94,14 @@ export default function CompanySettings() {
         setActiveBranchId(d.activeBranchId || null);
       })
       .catch(() => {});
+    api
+      .get('/model/packs')
+      .then(setPacks)
+      .catch(() => {});
+    api
+      .get('/model/features')
+      .then((f) => setFeatForm(f.features || {}))
+      .catch(() => {});
   }, []);
 
   const set = (k) => (e) => {
@@ -105,6 +116,22 @@ export default function CompanySettings() {
     try {
       await api.put('/company', form);
       setSaved('Settings saved.');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const toggleFeature = (k) => (e) =>
+    setFeatForm((f) => ({ ...f, [k]: e.target.checked }));
+
+  const saveModel = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaved('');
+    try {
+      await api.put('/company', { business_model: form.business_model });
+      await api.put('/model/features', { feature_flags: featForm });
+      setSaved('Business model & modules saved.');
     } catch (err) {
       setError(err.message);
     }
@@ -404,6 +431,64 @@ export default function CompanySettings() {
               <label>Invoice Footer Note</label>
               <textarea value={form.invoice_footer_note} onChange={set('invoice_footer_note')} rows={2} />
             </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Business Model &amp; Modules</div>
+          <p style={{ marginBottom: '10px', fontSize: '13px' }}>
+            Pick the business-model pack. Each pack is a feature set; menus below that are
+            switched off are hidden (the GST engine, ledger and audit trail are always on).
+          </p>
+          <div className="grid-3">
+            <div className="field">
+              <label>Business Model</label>
+              <select value={form.business_model} onChange={set('business_model')}>
+                {(!packs.models || packs.models.length === 0) && <option value="general">General Business</option>}
+                {(packs.models || []).map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+              {(() => {
+                const m = (packs.models || []).find((x) => x.id === form.business_model) || packs.models?.[0];
+                return m ? <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{m.description}</div> : null;
+              })()}
+            </div>
+          </div>
+          {packs.features && packs.features.length > 0 && (
+            <div style={{ marginTop: '12px' }}>
+              <div className="muted" style={{ fontSize: 12, marginBottom: '8px' }}>
+                Toggle modules on / off (hides the corresponding menu items):
+              </div>
+              {(() => {
+                const groups = (packs.features || []).reduce((acc, f) => {
+                  if (f.core) return acc;
+                  (acc[f.group] = acc[f.group] || []).push(f);
+                  return acc;
+                }, {});
+                return Object.entries(groups).map(([group, feats]) => (
+                  <div key={group} style={{ marginBottom: '10px' }}>
+                    <div style={{ fontWeight: 600, fontSize: 12, marginBottom: '4px' }}>{group}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                      {feats.map((f) => (
+                        <label key={f.key} style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={featForm[f.key] !== false}
+                            onChange={toggleFeature(f.key)}
+                            style={{ width: 'auto' }}
+                          />{' '}
+                          {f.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+          <div style={{ marginTop: '10px' }}>
+            <button className="btn btn-primary" type="button" onClick={saveModel}>Save Model &amp; Modules</button>
           </div>
         </div>
 

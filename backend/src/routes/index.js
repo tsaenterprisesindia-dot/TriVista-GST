@@ -25,6 +25,7 @@ const licensingRoutes = require('./licensing');
 const paymentLinkRoutes = require('./paymentLinks');
 const branchRoutes = require('./branches');
 const returnRoutes = require('./returns');
+const modelRoutes = require('./model');
 
 router.use('/auth', authRoutes);
 router.use('/products', productRoutes);
@@ -51,5 +52,6 @@ router.use('/licensing', licensingRoutes);
 router.use('/payment-links', paymentLinkRoutes);
 router.use('/branches', branchRoutes);
 router.use('/returns', returnRoutes);
+router.use('/model', modelRoutes);
 
 module.exports = router;

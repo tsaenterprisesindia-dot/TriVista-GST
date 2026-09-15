@@ -11,6 +11,26 @@ const PLAN_TYPES = [
 ];
 const PLAN_TYPE_LABEL = Object.fromEntries(PLAN_TYPES);
 
+const MODEL_LABEL = { general: 'General', manufacturing: 'Manufacturing', import_export: 'Import/Export' };
+
+const PLAN_FEATURES = [
+  { key: 'distribution', label: 'Routes / Beats' },
+  { key: 'consignment', label: 'Consignment' },
+  { key: 'agency', label: 'Agency Commission' },
+  { key: 'priceLists', label: 'Customer Price Lists' },
+  { key: 'coupons', label: 'Coupons' },
+  { key: 'loyalty', label: 'Loyalty Points' },
+  { key: 'outreach', label: 'Receipts via WhatsApp/SMS/Email' },
+  { key: 'bom', label: 'BOM' },
+  { key: 'workOrders', label: 'Work Orders' },
+  { key: 'jobWork', label: 'Job Work' },
+  { key: 'costing', label: 'Costing' },
+  { key: 'tradeMasters', label: 'IEC / LUT / Currency' },
+  { key: 'multiCurrency', label: 'Multi-Currency' },
+  { key: 'exportDocs', label: 'Export Docs Chain' },
+  { key: 'exportGst', label: 'GSTR-1 6A / Refund' },
+];
+
 const LICENSE_STATUSES = [
   ['TRIAL', 'Trial', 'badge-blue'],
   ['ACTIVE', 'Active', 'badge-green'],
@@ -26,7 +46,7 @@ const PAY_BADGE = { UNPAID: 'badge-gray', PARTIAL: 'badge-amber', PAID: 'badge-g
 
 const inr = (n) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-const emptyPlan = { name: '', type: 'SUBSCRIPTION', duration_days: '30', price: '', seats: '1', is_active: 1 };
+const emptyPlan = { name: '', type: 'SUBSCRIPTION', duration_days: '30', price: '', seats: '1', is_active: 1, business_model: 'general', features: {} };
 const emptyLic = {
   client_name: '', contact_person: '', phone: '', email: '', gstin: '',
   plan_id: '', start_date: new Date().toISOString().slice(0, 10), status: 'TRIAL',
@@ -231,6 +251,33 @@ export default function Licensing() {
               <div className="field"><label>Duration (days, blank = lifetime)</label><input type="number" min="1" value={planForm.duration_days} onChange={(e) => setPlanForm((f) => ({ ...f, duration_days: e.target.value }))} /></div>
               <div className="field"><label>Price (₹)</label><input type="number" min="0" step="0.01" value={planForm.price} onChange={(e) => setPlanForm((f) => ({ ...f, price: e.target.value }))} /></div>
               <div className="field"><label>Seats</label><input type="number" min="1" value={planForm.seats} onChange={(e) => setPlanForm((f) => ({ ...f, seats: e.target.value }))} /></div>
+              <div className="field"><label>Business Model Pack</label>
+                <select value={planForm.business_model} onChange={(e) => setPlanForm((f) => ({ ...f, business_model: e.target.value }))}>
+                  <option value="general">General Business</option>
+                  <option value="manufacturing">Manufacturing</option>
+                  <option value="import_export">Import & Export</option>
+                </select>
+              </div>
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+              Add-on feature flags granted by this plan (over and above the model pack):
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: 10 }}>
+              {PLAN_FEATURES.map((f) => (
+                <label key={f.key} style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={(planForm.features && planForm.features[f.key]) === true}
+                    onChange={(e) => setPlanForm((pf) => {
+                      const features = { ...(pf.features || {}) };
+                      if (e.target.checked) features[f.key] = true; else delete features[f.key];
+                      return { ...pf, features };
+                    })}
+                    style={{ width: 'auto' }}
+                  />{' '}
+                  {f.label}
+                </label>
+              ))}
             </div>
             <button className="btn btn-primary" type="submit">Save Plan</button>
             <button className="btn" type="button" onClick={() => setShowPlanForm(false)}>Cancel</button>
@@ -238,16 +285,25 @@ export default function Licensing() {
         )}
         <table>
           <thead>
-            <tr><th>Name</th><th>Type</th><th>Duration</th><th>Price</th><th>Seats</th><th>Active</th><th>Uses</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            {plans.map((p) => (
-              <tr key={p.id}>
-                <td><input defaultValue={p.name} onBlur={(e) => p.name !== e.target.value && updatePlan(p, { name: e.target.value })} style={{ maxWidth: 220 }} /></td>
-                <td><span className={`badge ${p.type === 'TRIAL' ? 'badge-blue' : p.type === 'LIFETIME' ? 'badge-gray' : 'badge-amber'}`}>{PLAN_TYPE_LABEL[p.type] || p.type}</span></td>
-                <td>{p.duration_days ? `${p.duration_days} days` : 'Lifetime'}</td>
-                <td><input defaultValue={p.price} type="number" step="0.01" onBlur={(e) => String(p.price) !== String(e.target.value) && updatePlan(p, { price: e.target.value })} style={{ maxWidth: 90 }} /></td>
-                <td>{p.seats}</td>
+                <tr><th>Name</th><th>Type</th><th>Packs</th><th>Duration</th><th>Price</th><th>Seats</th><th>Active</th><th>Uses</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {plans.map((p) => (
+                  <tr key={p.id}>
+                    <td><input defaultValue={p.name} onBlur={(e) => p.name !== e.target.value && updatePlan(p, { name: e.target.value })} style={{ maxWidth: 220 }} /></td>
+                    <td><span className={`badge ${p.type === 'TRIAL' ? 'badge-blue' : p.type === 'LIFETIME' ? 'badge-gray' : 'badge-amber'}`}>{PLAN_TYPE_LABEL[p.type] || p.type}</span></td>
+                    <td>
+                      <span className="badge badge-gray">{MODEL_LABEL[p.business_model] || MODEL_LABEL.general}</span>{' '}
+                      {(() => {
+                        let feats = p.features;
+                        if (typeof feats === 'string') { try { feats = JSON.parse(feats); } catch (_e) { feats = null; } }
+                        const flags = feats && typeof feats === 'object' ? Object.entries(feats).filter(([, v]) => v).map(([k]) => PLAN_FEATURES.find((x) => x.key === k)?.label || k) : [];
+                        return flags.length ? <span className="muted" style={{ fontSize: 11 }}>({flags.join(', ')})</span> : null;
+                      })()}
+                    </td>
+                    <td>{p.duration_days ? `${p.duration_days} days` : 'Lifetime'}</td>
+                    <td><input defaultValue={p.price} type="number" step="0.01" onBlur={(e) => String(p.price) !== String(e.target.value) && updatePlan(p, { price: e.target.value })} style={{ maxWidth: 90 }} /></td>
+                    <td>{p.seats}</td>
                 <td>
                   <button className={`btn btn-sm ${p.is_active ? '' : 'btn-danger'}`} onClick={() => updatePlan(p, { is_active: p.is_active ? 0 : 1 })}>{p.is_active ? 'Active' : 'Deactivated'}</button>
                 </td>

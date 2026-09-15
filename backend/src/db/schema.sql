@@ -92,6 +92,8 @@ CREATE TABLE `company_settings` (
   `round_off` TINYINT(1) NOT NULL DEFAULT 1,
   `active_branch_id` INT UNSIGNED DEFAULT NULL,
   `business_type` ENUM('retail','wholesale','services','mixed') NOT NULL DEFAULT 'mixed',
+  `business_model` ENUM('general','manufacturing','import_export') NOT NULL DEFAULT 'general' COMMENT 'Set of business-model packs: general | manufacturing | import_export',
+  `feature_flags` JSON DEFAULT NULL COMMENT 'Per-company feature overrides { feature: true|false } (core flags cannot be disabled)',
   `e_invoice_enabled` TINYINT(1) NOT NULL DEFAULT 0,
   `aggregate_turnover_crores` DECIMAL(6,2) NOT NULL DEFAULT 0.00,
   `apply_tds` TINYINT(1) NOT NULL DEFAULT 0,
@@ -850,6 +852,8 @@ CREATE TABLE `license_plans` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(120) NOT NULL,
   `type` ENUM('TRIAL','SUBSCRIPTION','ONETIME','LIFETIME') NOT NULL,
+  `business_model` ENUM('general','manufacturing','import_export') NOT NULL DEFAULT 'general' COMMENT 'Model pack this plan unlocks; features = add-ons granted',
+  `features` JSON DEFAULT NULL COMMENT 'Add-on feature flags granted by this plan { feature: true|false }',
   `duration_days` INT UNSIGNED DEFAULT NULL,
   `price` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `seats` INT UNSIGNED NOT NULL DEFAULT 1,
@@ -904,11 +908,11 @@ CREATE TABLE `license_renewals` (
   CONSTRAINT `fk_lr_license` FOREIGN KEY (`license_id`) REFERENCES `client_licenses` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-INSERT INTO `license_plans` (`name`,`type`,`duration_days`,`price`,`seats`,`is_active`) VALUES
-  ('Free Trial - 30 Days','TRIAL',30,0.00,1,1),
-  ('Monthly Subscription','SUBSCRIPTION',30,500.00,1,1),
-  ('Yearly Subscription','SUBSCRIPTION',365,5000.00,1,1),
-  ('One-Time Lifetime License','LIFETIME',NULL,15000.00,1,1);
+INSERT INTO `license_plans` (`name`,`type`,`business_model`,`features`,`duration_days`,`price`,`seats`,`is_active`) VALUES
+  ('Free Trial - 30 Days','TRIAL','general',JSON_OBJECT(),30,0.00,1,1),
+  ('Monthly Subscription','SUBSCRIPTION','general',JSON_OBJECT(),30,500.00,1,1),
+  ('Yearly Subscription','SUBSCRIPTION','general',JSON_OBJECT(),365,5000.00,1,1),
+  ('One-Time Lifetime License','LIFETIME','general',JSON_OBJECT(),NULL,15000.00,1,1);
 
 -- ============================================================
 -- Seed: default admin user & default chart of accounts

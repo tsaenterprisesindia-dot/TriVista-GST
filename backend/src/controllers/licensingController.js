@@ -8,6 +8,10 @@ const { createInvoiceCore, refreshCustomerBalance } = require('./invoiceControll
 const PLAN_TYPES = ['TRIAL', 'SUBSCRIPTION', 'ONETIME', 'LIFETIME'];
 const LIC_STATUSES = ['TRIAL', 'ACTIVE', 'EXPIRED', 'PAST_DUE', 'CANCELLED'];
 const PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'];
+const { BUSINESS_MODELS } = require('../config/modelPacks');
+const { FEATURE_CATALOG } = require('../config/modelPacks');
+const MODEL_BUSINESS_SET = new Set(BUSINESS_MODELS);
+const FEATURE_KEYS = new Set(FEATURE_CATALOG.map((f) => f.key));
 
 function toDateStr(d) {
   const y = d.getFullYear();
@@ -51,17 +55,34 @@ async function listPlans(req, res, next) {
        GROUP BY p.id
        ORDER BY p.id`
     );
-    res.json(rows);
+    const out = rows.map((r) => {
+      let features = r.features;
+      if (typeof features === 'string' && features) {
+        try { features = JSON.parse(features); } catch (_e) { features = null; }
+      }
+      return { ...r, features: features || {} };
+    });
+    res.json(out);
   } catch (e) { next(e); }
 }
 
 async function createPlan(req, res, next) {
   try {
-    const { name, type, duration_days, price, seats, is_active } = req.body || {};
+    const { name, type, duration_days, price, seats, is_active, business_model, features } = req.body || {};
     const t = String(type || '').toUpperCase();
     if (!PLAN_TYPES.includes(t)) return res.status(400).json({ error: 'Please choose a valid plan type.' });
     const nm = String(name || '').trim();
     if (nm.length < 3 || nm.length > 120) return res.status(400).json({ error: 'Plan name must be between 3 and 120 characters.' });
+    const bm = String(business_model || 'general');
+    if (!MODEL_BUSINESS_SET.has(bm)) return res.status(400).json({ error: 'Invalid business_model.' });
+    let feat = null;
+    if (features !== undefined) {
+      if (typeof features !== 'object' || Array.isArray(features)) return res.status(400).json({ error: 'features must be an object of feature -> boolean.' });
+      feat = {};
+      for (const [k, v] of Object.entries(features)) {
+        if (FEATURE_KEYS.has(k) && typeof v === 'boolean') feat[k] = v;
+      }
+    }
     let days = null;
     if (t !== 'LIFETIME') {
       days = Number(duration_days);
@@ -72,11 +93,11 @@ async function createPlan(req, res, next) {
     const priceVal = Math.max(0, Number(price) || 0);
     const seatsVal = Math.max(1, Number(seats) || 1);
     const [r] = await getPool().query(
-      `INSERT INTO license_plans (name, type, duration_days, price, seats, is_active)
-       VALUES (?,?,?,?,?,?)`,
-      [nm, t, days, priceVal, seatsVal, is_active === undefined ? 1 : is_active ? 1 : 0]
+      `INSERT INTO license_plans (name, type, business_model, features, duration_days, price, seats, is_active)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [nm, t, bm, feat ? JSON.stringify(feat) : null, days, priceVal, seatsVal, is_active === undefined ? 1 : is_active ? 1 : 0]
     );
-    await audit(req, 'PLAN_CREATE', 'license_plan', r.insertId, { name: nm, type: t, price: priceVal });
+    await audit(req, 'PLAN_CREATE', 'license_plan', r.insertId, { name: nm, type: t, price: priceVal, business_model: bm });
     res.status(201).json({ id: r.insertId });
   } catch (e) { next(e); }
 }
@@ -107,13 +128,23 @@ async function updatePlan(req, res, next) {
     if (b.price !== undefined) p.price = Math.max(0, Number(p.price) || 0);
     if (b.seats !== undefined) p.seats = Math.max(1, Number(p.seats) || 1);
     if (b.is_active !== undefined) p.is_active = b.is_active ? 1 : 0;
+    if (b.business_model !== undefined && !MODEL_BUSINESS_SET.has(b.business_model)) {
+      return res.status(400).json({ error: 'Invalid business_model.' });
+    }
+    if (b.features !== undefined) {
+      if (typeof b.features !== 'object' || Array.isArray(b.features)) return res.status(400).json({ error: 'features must be an object of feature -> boolean.' });
+      p.features = {};
+      for (const [k, v] of Object.entries(b.features)) {
+        if (FEATURE_KEYS.has(k) && typeof v === 'boolean') p.features[k] = v;
+      }
+    }
     const nm = String(p.name || '').trim();
     if (nm.length < 3 || nm.length > 120) return res.status(400).json({ error: 'Plan name must be between 3 and 120 characters.' });
     await pool.query(
-      `UPDATE license_plans SET name=?, type=?, duration_days=?, price=?, seats=?, is_active=? WHERE id=?`,
-      [nm, p.type, p.duration_days, p.price, p.seats, p.is_active, id]
+      `UPDATE license_plans SET name=?, type=?, business_model=?, features=?, duration_days=?, price=?, seats=?, is_active=? WHERE id=?`,
+      [nm, p.type, p.business_model || 'general', p.features !== undefined ? JSON.stringify(p.features) : null, p.duration_days, p.price, p.seats, p.is_active, id]
     );
-    await audit(req, 'PLAN_UPDATE', 'license_plan', id, { name: nm, type: p.type, price: p.price });
+    await audit(req, 'PLAN_UPDATE', 'license_plan', id, { name: nm, type: p.type, price: p.price, business_model: p.business_model });
     res.json({ ok: true });
   } catch (e) { next(e); }
 }

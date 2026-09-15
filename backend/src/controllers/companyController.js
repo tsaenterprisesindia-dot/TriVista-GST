@@ -5,6 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { isValidGstin } = require('../utils/gst');
 const { audit } = require('../utils/audit');
+const { BUSINESS_MODELS } = require('../config/modelPacks');
+
+const BUSINESS_MODEL_SET = new Set(BUSINESS_MODELS);
 
 async function getSettings(_req, res, next) {
   try {
@@ -29,11 +32,21 @@ async function updateSettings(req, res, next) {
       'pincode','phone','email','website','logo_path','invoice_prefix','invoice_start_number',
       'invoice_footer_note','bank_name','bank_account_no','bank_ifsc','upi_id','upi_beneficiary','gst_tax_preference','round_off',
       'business_type',
+      'business_model',
+      'feature_flags',
       'e_invoice_enabled','aggregate_turnover_crores','apply_tds','apply_tcs','tds_rate','tcs_rate',
       'tds_threshold','tcs_threshold','discount_limit_pct',
     ];
     const numFields = ['invoice_start_number','round_off','aggregate_turnover_crores','tds_rate','tcs_rate','tds_threshold','tcs_threshold','discount_limit_pct'];
     const boolFields = ['e_invoice_enabled','apply_tds','apply_tcs'];
+    if (b.business_model !== undefined && !BUSINESS_MODEL_SET.has(b.business_model)) {
+      return res.status(400).json({ error: 'Invalid business_model.' });
+    }
+    if (b.feature_flags !== undefined) {
+      if (typeof b.feature_flags !== 'object' || Array.isArray(b.feature_flags) || b.feature_flags === null) {
+        return res.status(400).json({ error: 'feature_flags must be an object.' });
+      }
+    }
     const sets = [];
     const params = [];
     for (const f of allowed) {
@@ -41,6 +54,7 @@ async function updateSettings(req, res, next) {
         let v = b[f];
         if (numFields.includes(f)) v = Number(v);
         if (boolFields.includes(f)) v = v ? 1 : 0;
+        if (f === 'feature_flags') v = JSON.stringify(v);
         sets.push(`${f}=?`);
         params.push(v);
       }
