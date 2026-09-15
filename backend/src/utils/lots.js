@@ -187,6 +187,51 @@ async function restoreForCancelledInvoice(conn, { reference_type, reference_id, 
 }
 
 /**
+ * Restock the returned portion of an invoice (partial returns). Mirrors the
+ * original OUT movements back as IN movements (same lot + serials where the
+ * returned quantity fully covers a movement), scoped to the returned lines.
+ * Returns the number of movements written.
+ */
+async function restoreForReturn(conn, { invoice_id, lines, reference_type = 'return', reference_id, created_by, note }) {
+  const seen = [];
+  const want = new Map();
+  for (const l of lines) {
+    const key = Number(l.product_id);
+    want.set(key, (want.get(key) || 0) + Number(l.qty));
+    if (!l.qty) continue;
+  }
+  if (!want.size) return 0;
+
+  const [outs] = await conn.query(
+    `SELECT id, product_id, type, quantity, batch_id, serial_numbers
+     FROM stock_movements
+     WHERE reference_id=? AND type='OUT'
+       AND reference_type IN ('invoice','pos')
+     ORDER BY id DESC`,
+    [invoice_id]
+  );
+
+  const pending = new Map(want);
+  for (const o of outs) {
+    const key = Number(o.product_id);
+    let need = pending.get(key);
+    if (!need || need <= 0) continue;
+    const take = Math.min(Number(o.quantity), need);
+    let serials = null;
+    if (take === Number(o.quantity) && o.serial_numbers) serials = o.serial_numbers;
+    await conn.query(
+      `INSERT INTO stock_movements (product_id,type,quantity,unit_cost,batch_id,serial_numbers,reference_type,reference_id,note,created_by)
+       VALUES (?,'IN',?,NULL,?,?,?,?,?,?)`,
+      [key, take, o.batch_id, serials, reference_type, reference_id || null, note || `Return restock`, created_by || null]
+    );
+    seen.push(o.id);
+    pending.set(key, Math.round((need - take) * 100) / 100);
+    if (pending.get(key) <= 0) pending.delete(key);
+  }
+  return seen.length;
+}
+
+/**
  * Fallback (legacy) restore for invoices that predate movement referencing:
  * adds one IN per invoice line, batch-less.
  */
@@ -216,6 +261,7 @@ module.exports = {
   issueForSale,
   recordIn,
   restoreForCancelledInvoice,
+  restoreForReturn,
   restoreLegacy,
   auditMovement,
 };

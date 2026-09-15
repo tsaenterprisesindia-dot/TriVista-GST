@@ -30,6 +30,9 @@ import Licensing from './pages/Licensing';
 import PaymentLinks from './pages/PaymentLinks';
 import Account from './pages/Account';
 import Agreement from './pages/Agreement';
+import Returns from './pages/Returns';
+import ReturnCreate from './pages/ReturnCreate';
+import ReturnView from './pages/ReturnView';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -59,6 +62,9 @@ function App() {
         <Route path="billing" element={<Billing />} />
         <Route path="invoices" element={<InvoiceList />} />
         <Route path="invoices/:id" element={<InvoiceView />} />
+        <Route path="returns" element={<Returns />} />
+        <Route path="returns/new" element={<ReturnCreate />} />
+        <Route path="returns/:id" element={<ReturnView />} />
         <Route path="pos" element={<POS />} />
         <Route path="pos/shortcuts" element={<POSShortcuts />} />
         <Route path="products" element={<Products />} />

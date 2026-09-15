@@ -10,6 +10,7 @@ const allNavItems = [
   { to: '/pos/shortcuts', label: 'POS Shortcuts' },
   { to: '/billing', label: 'New Invoice', hideForViewer: true },
   { to: '/invoices', label: 'Invoices' },
+  { to: '/returns', label: 'Returns' },
   { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true },
   { to: '/inventory', label: 'Inventory', hideForServices: true, hideForViewer: true },
   { to: '/customers', label: 'Customers', hideForViewer: true },

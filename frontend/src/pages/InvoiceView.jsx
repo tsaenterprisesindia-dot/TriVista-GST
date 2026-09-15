@@ -155,6 +155,9 @@ export default function InvoiceView() {
           </div>
           <div className="flex">
             <button className="btn btn-sm" onClick={() => window.print()}>Print / Save PDF</button>
+            {['B2B', 'B2C', 'EXPORT', 'NIL'].includes(inv.invoice_type) && !['CANCELLED', 'RETURNED'].includes(inv.status) && (
+              <Link className="btn btn-sm btn-primary" to={`/returns/new?invoice=${inv.id}`}>Return Items</Link>
+            )}
             {(inv.payments || []).length > 0 && (
               <button className="btn btn-sm" onClick={printReceipt}>Payment Receipt</button>
             )}

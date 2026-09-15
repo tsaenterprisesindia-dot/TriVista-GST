@@ -465,6 +465,7 @@ CREATE TABLE `invoice_items` (
   `igst_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `cess_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `returned_qty` DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT 'Sales returns: qty already returned against this line',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_invitem_invoice` (`invoice_id`),
@@ -481,6 +482,7 @@ CREATE TABLE `payments` (
   `customer_id` INT UNSIGNED DEFAULT NULL,
   `date` DATE NOT NULL,
   `amount` DECIMAL(14,2) NOT NULL,
+  `payment_type` ENUM('PAYMENT','REFUND') NOT NULL DEFAULT 'PAYMENT',
   `mode` ENUM('CASH','CARD','UPI','BANK','OTHER') NOT NULL DEFAULT 'CASH',
   `reference_no` VARCHAR(60) DEFAULT NULL,
   `note` VARCHAR(255) DEFAULT NULL,
@@ -492,6 +494,73 @@ CREATE TABLE `payments` (
   KEY `idx_pay_customer` (`customer_id`),
   CONSTRAINT `fk_pay_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices`(`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_pay_bill` FOREIGN KEY (`bill_id`) REFERENCES `purchase_bills`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Sales returns / refunds / exchanges
+-- `returns` is the workflow header (return_number, refund status);
+-- the actual accounting + stock reversal is driven by the linked
+-- CREDIT_NOTE invoice (negative signed) created at the same time.
+-- ------------------------------------------------------------
+CREATE TABLE `returns` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `return_number` VARCHAR(60) NOT NULL,
+  `return_date` DATE NOT NULL,
+  `invoice_id` INT UNSIGNED NOT NULL,
+  `invoice_number` VARCHAR(60) NOT NULL,
+  `customer_id` INT UNSIGNED NOT NULL,
+  `customer_name` VARCHAR(190) DEFAULT NULL,
+  `reason` VARCHAR(255) DEFAULT NULL,
+  `type` ENUM('RETURN','EXCHANGE') NOT NULL DEFAULT 'RETURN',
+  `subtotal` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `discount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `cgst_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `sgst_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `utgst_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `igst_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `cess_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `tax_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `round_off` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `grand_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `refunded_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `refund_status` ENUM('PENDING','PARTIAL','REFUNDED','CREDITED') NOT NULL DEFAULT 'PENDING',
+  `credit_note_id` INT UNSIGNED DEFAULT NULL,
+  `credit_note_number` VARCHAR(60) DEFAULT NULL,
+  `exchange_invoice_id` INT UNSIGNED DEFAULT NULL,
+  `exchange_invoice_number` VARCHAR(60) DEFAULT NULL,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_return_number` (`return_number`),
+  KEY `idx_return_invoice` (`invoice_id`),
+  KEY `idx_return_customer` (`customer_id`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Return line items (returned quantities per original invoice line)
+-- ------------------------------------------------------------
+CREATE TABLE `return_items` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `return_id` INT UNSIGNED NOT NULL,
+  `invoice_item_id` INT UNSIGNED NOT NULL,
+  `product_id` INT UNSIGNED DEFAULT NULL,
+  `item_name` VARCHAR(190) NOT NULL,
+  `hsn_code` VARCHAR(20) DEFAULT NULL,
+  `gst_rate` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `quantity` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `unit` VARCHAR(30) DEFAULT 'PCS',
+  `unit_price` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `discount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `taxable_value` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `cgst_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `sgst_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `utgst_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `igst_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `cess_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  PRIMARY KEY (`id`),
+  KEY `idx_return_item_return` (`return_id`),
+  KEY `idx_return_item_inv_item` (`invoice_item_id`)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

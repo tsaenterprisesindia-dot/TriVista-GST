@@ -157,6 +157,28 @@ async function postSalePayment(db, { invoice, amount, date, mode = 'BANK', payme
   });
 }
 
+/**
+ * Refund money back to a customer (mirror of postSalePayment).
+ * Dr Customer (1300) / Cr Cash-or-Bank (1000/1100). Negative on the return /
+ * credit-note side, so a refund voucher books against the credit.
+ */
+async function postRefund(db, { invoice, amount, date, mode = 'BANK', payment_id, created_by }) {
+  const cash = String(mode).toUpperCase() === 'CASH';
+  return postVoucher(db, {
+    voucher_no: `REF-P-INV-${payment_id}`,
+    date,
+    narration: `Refund for ${invoice.invoice_number} (${mode.toUpperCase() || 'BANK'})`,
+    source: 'REFUND',
+    ref_type: 'payment',
+    ref_id: payment_id,
+    legs: [
+      { account_id: await accountId(db, '1300'), debit: Number(amount) || 0, credit: 0 },
+      { account_id: await accountId(db, cash ? '1000' : '1100'), debit: 0, credit: Number(amount) || 0 },
+    ],
+    created_by,
+  });
+}
+
 // ---------------- Purchases ----------------
 
 async function postPurchase(db, bill, created_by) {
@@ -429,6 +451,7 @@ module.exports = {
   postReversal,
   postSale,
   postSalePayment,
+  postRefund,
   postPurchase,
   postPurchasePayment,
   accountList,

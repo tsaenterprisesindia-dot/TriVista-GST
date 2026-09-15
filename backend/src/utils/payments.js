@@ -146,4 +146,42 @@ async function recordPurchasePayments(conn, { bill, legs, date, created_by }) {
   return ids;
 }
 
-module.exports = { MODES, normalizeMode, parsePayments, capLegs, recordInvoicePayments, recordPurchasePayments };
+/**
+ * Record refund legs back to a customer: one `payments` row per leg with
+ * payment_type='REFUND' + a mirrored ledger voucher (Dr customer / Cr cash-bank).
+ * Runs inside the caller's transaction. Returns the inserted payment ids.
+ */
+async function recordRefundPayments(conn, { invoice, customer_id, legs, date, created_by }) {
+  const ids = [];
+  const count = legs.length;
+  const suffix = count > 1 ? ' (split)' : '';
+  for (let i = 0; i < legs.length; i++) {
+    const l = legs[i];
+    const [ins] = await conn.query(
+      `INSERT INTO payments (invoice_id,customer_id,date,amount,payment_type,mode,reference_no,note,created_by)
+       VALUES (?,?,?,?,'REFUND',?,?,?,?)`,
+      [
+        invoice.id,
+        customer_id ?? invoice.customer_id,
+        date,
+        l.amount,
+        l.mode,
+        l.reference_no,
+        `${count > 1 ? `Refund ${i + 1}/${count}` : 'Refund'} on ${invoice.invoice_number}${suffix}${l.reference_no ? ' (' + l.reference_no + ')' : ''}`,
+        created_by,
+      ]
+    );
+    ids.push(ins.insertId);
+    await ledger.postRefund(conn, {
+      invoice: { invoice_number: invoice.invoice_number },
+      amount: l.amount,
+      date,
+      mode: l.mode,
+      payment_id: ins.insertId,
+      created_by,
+    });
+  }
+  return ids;
+}
+
+module.exports = { MODES, normalizeMode, parsePayments, capLegs, recordInvoicePayments, recordPurchasePayments, recordRefundPayments };
