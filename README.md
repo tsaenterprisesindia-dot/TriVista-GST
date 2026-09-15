@@ -1,4 +1,4 @@
-# TriVista GST
+﻿# TriVista GST
 
 *A Unit of TSA Enterprises*
 
@@ -6,17 +6,17 @@ A complete GST Billing and ERP system for Indian small and medium businesses, bu
 
 ## Features
 
-- **GST Billing** — taxable-value computation, automatic CGST/SGST (intra-state) or IGST (inter-state) split, gap-less pre-printed invoice numbering (atomic, no duplicates), discounts, payment modes with partial/cash entry, invoice cancellation with automatic stock reversal.
-- **POS** — fast product-grid sale screen with walk-in customer support, live tax computation and receipt printing.
-- **Inventory** — stock on hand computed from movements (IN / OUT / ADJUST), low-stock report, unit-cost valued stock report.
-- **Masters** — products with HSN/SAC master lookup, categories, customers, vendors.
-- **Accounting** — purchase bills with GST/ITC, P&L, balance sheet (inventory + receivables + payables), daybook.
-- **GST Returns** — GSTR-1 (outward supplies) and GSTR-3B (rate-wise) summaries plus CSV export (Zoho/Busy-style) and Tally XML export.
-- **e-Invoice / e-Way Bill** — GSTN 1.03 JSON payload generation, sandbox IRN simulation, e-way bill JSON preparation (connect to your IRP provider, e.g. Wavez / Vayana / NSDL, with your credentials).
-- **GSTR-2B Reconciliation** — paste supplier rows, import, auto-match against purchase bills, mismatch / not-found tracking.
-- **AI Assistant** — built-in rule-based insights and chat (monthly sales, growth, top product, slow movers, overdue), pluggable OpenAI / Gemini / Azure providers via Settings.
-- **Public API** — API-key protected `GET /api/v1/products`, `/v1/invoices`, `/v1/stock`, `/v1/gst-summary`.
-- **Multi-company / multi-branch ready** — users carry `company_id` / `branch_id` / `member_type`; schema supports branches table for later expansion.
+- **GST Billing** â€” taxable-value computation, automatic CGST/SGST (intra-state) or IGST (inter-state) split, gap-less pre-printed invoice numbering (atomic, no duplicates), discounts, payment modes with partial/cash entry, invoice cancellation with automatic stock reversal.
+- **POS** â€” fast product-grid sale screen with walk-in customer support, live tax computation and receipt printing.
+- **Inventory** â€” stock on hand computed from movements (IN / OUT / ADJUST), low-stock report, unit-cost valued stock report.
+- **Masters** â€” products with HSN/SAC master lookup, categories, customers, vendors.
+- **Accounting** â€” purchase bills with GST/ITC, P&L, balance sheet (inventory + receivables + payables), daybook.
+- **GST Returns** â€” GSTR-1 (outward supplies) and GSTR-3B (rate-wise) summaries plus CSV export (Zoho/Busy-style) and Tally XML export.
+- **e-Invoice / e-Way Bill** â€” GSTN 1.03 JSON payload generation, sandbox IRN simulation, e-way bill JSON preparation (connect to your IRP provider, e.g. Wavez / Vayana / NSDL, with your credentials).
+- **GSTR-2B Reconciliation** â€” paste supplier rows, import, auto-match against purchase bills, mismatch / not-found tracking.
+- **AI Assistant** â€” built-in rule-based insights and chat (monthly sales, growth, top product, slow movers, overdue), pluggable OpenAI / Gemini / Azure providers via Settings.
+- **Public API** â€” API-key protected `GET /api/v1/products`, `/v1/invoices`, `/v1/stock`, `/v1/gst-summary`.
+- **Multi-company / multi-branch ready** â€” users carry `company_id` / `branch_id` / `member_type`; schema supports branches table for later expansion.
 
 ## Stack
 
@@ -47,16 +47,16 @@ frontend/
 docs/HOSTING.md        # deployment guide
 ```
 
-## Quick Start (Windows, standalone MariaDB — no XAMPP)
+## Quick Start (Windows, MariaDB via XAMPP)
 
-A standalone MariaDB 10.11 lives at `I:\mysql` (binaries + data dir), independent of any XAMPP install. Config: `I:\mysql\my.ini` (datadir `I:\mysql\data`, port 3306, root with no password).
+MariaDB ships with XAMPP and lives at `H:\xampp\mysql` (binaries + data dir). Config: `H:\xampp\mysql\bin\my.ini` (datadir `H:\xampp\mysql\data`, port 3306, root with no password).
 
 1. Start database, API and frontend (or run the pieces separately):
    ```powershell
-   powershell -ExecutionPolicy Bypass -File I:\TriveniGST\scripts\start-all.ps1
+   powershell -ExecutionPolicy Bypass -File H:\TriveniGST\scripts\start-all.ps1
    ```
    - DB only: `scripts\start-db.ps1` · Stop DB: `scripts\stop-db.ps1`
-   - Alternatively: `I:\mysql\bin\mariadbd.exe --defaults-file=I:\mysql\my.ini`
+   - Alternatively: `H:\xampp\mysql\bin\mysqld.exe --defaults-file=H:\xampp\mysql\bin\my.ini`
 
 2. Backend:
    ```powershell
@@ -93,11 +93,11 @@ Open http://localhost:5173 and log in with:
 | DB_USER       | root                 | MySQL user                           |
 | DB_PASSWORD   | (empty)              | MySQL password                       |
 | DB_NAME       | triveni_gst_erp      | Database name                        |
-| JWT_SECRET    | (random)             | JWT signing secret — change in prod  |
+| JWT_SECRET    | (random)             | JWT signing secret â€” change in prod  |
 | CORS_ORIGIN   | http://localhost:5173| Allowed frontend origin              |
 | INTEGRATION_EINVOICE_URL | (empty)     | Real IRP endpoint when you have creds |
 
-> The standalone MariaDB (port 3306, root with no password) matches these defaults — see Quick Start above. Data lives in `I:\mysql\data`.
+> The XAMPP MariaDB (port 3306, root with no password) matches these defaults â€” see Quick Start above. Data lives in `H:\xampp\mysql\data`.
 
 ## Key API Endpoints
 

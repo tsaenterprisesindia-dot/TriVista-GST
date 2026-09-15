@@ -1,4 +1,4 @@
-# TriVista GST ERP - Maintenance & Update Guide
+﻿# TriVista GST ERP - Maintenance & Update Guide
 
 How to keep this project healthy, updated and recoverable. Follow the order of
 sections below - especially the "Change workflow", which is the same safe path
@@ -10,8 +10,8 @@ every upgrade should take.
 
 | Item | Where |
 | --- | --- |
-| Backend (Node/Express) | `I:\TriveniGST\backend` - runs on port **5000** |
-| Frontend (React/Vite) | `I:\TriveniGST\frontend` - dev server on **5173**; production build served by the backend |
+| Backend (Node/Express) | `H:\TriveniGST\backend` - runs on port **5000** |
+| Frontend (React/Vite) | `H:\TriveniGST\frontend` - dev server on **5173**; production build served by the backend |
 | Database | MariaDB (XAMPP) `H:\xampp\mysql` - database `triveni_gst_erp`, port 3306 |
 | One-click start | `start.bat` (starts DB if down, then backend) |
 | Backend logs | `%TEMP%\opencode\prod_out.log` (stdout), `prod_err.log` (errors) |
@@ -113,10 +113,10 @@ Existing migrations (order as defined in mig-all.js):
 ### Customer & Supplier classification + per-party taxes
 Every customer/vendor carries a **registration category** - Registered (B2B),
 Unregistered (B2C), Composition Dealer, SEZ or Export - stored on the party master
-(backfilled from GSTIN presence; the old "GSTIN ⇒ B2B" rule is only the fallback).
+(backfilled from GSTIN presence; the old "GSTIN â‡’ B2B" rule is only the fallback).
 
-- **Document type defaulting** (`/api/invoices`): no explicit `invoice_type` →
-  `export` ⇒ `EXPORT`, `unregistered` ⇒ `B2C`, otherwise `B2B`. `CREDIT_NOTE` /
+- **Document type defaulting** (`/api/invoices`): no explicit `invoice_type` â†’
+  `export` â‡’ `EXPORT`, `unregistered` â‡’ `B2C`, otherwise `B2B`. `CREDIT_NOTE` /
   `DEBIT_NOTE` / `NIL` / `EXPORT` are now stored correctly (the column previously
   truncated them to `''`).
 - **Tax-exempt party**: `tax_exempt` on customer/vendor produces nil-rated

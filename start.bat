@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 rem ============================================================
 rem TriVista GST ERP - production start helper
 rem Starts MariaDB (XAMPP) if needed, then the backend which
@@ -28,7 +28,7 @@ echo [2/4] Checking backend on port 5000...
 netstat -ano | findstr /C:":5000" >nul 2>&1
 if errorlevel 1 (
   echo   Starting backend...
-  start "TriVista backend" /min cmd /c "I:\TriveniGST\backend\start-prod.cmd"
+  start "TriVista backend" /min cmd /c "H:\TriveniGST\backend\start-prod.cmd"
 ) else (
   echo   Backend already running.
 )

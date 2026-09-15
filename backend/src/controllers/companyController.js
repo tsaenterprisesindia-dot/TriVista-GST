@@ -165,7 +165,7 @@ function runDbCmd(bin, args) {
 async function backup(req, res, next) {
   try {
     const { user, pass, name, host, port } = dbEnv();
-    const mysqlBin = process.env.MYSQL_BIN || 'I:\\mysql\\bin';
+    const mysqlBin = process.env.MYSQL_BIN || 'H:\\xampp\\mysql\\bin';
     const dumpBin = path.join(mysqlBin, 'mysqldump.exe');
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:T.]/g, '-').slice(0, 19);
@@ -220,7 +220,7 @@ async function restore(req, res, next) {
     if (!fs.existsSync(full)) return res.status(404).json({ error: 'Backup file not found.' });
 
     const { user: du, pass, name } = dbEnv();
-    const mysqlBin = process.env.MYSQL_BIN || 'I:\\mysql\\bin';
+    const mysqlBin = process.env.MYSQL_BIN || 'H:\\xampp\\mysql\\bin';
     const mysqlBinPath = path.join(mysqlBin, 'mysql.exe');
     const args = ['--user=' + du, ...(pass ? ['--password=' + pass] : []), name];
     await new Promise((resolve, reject) => {

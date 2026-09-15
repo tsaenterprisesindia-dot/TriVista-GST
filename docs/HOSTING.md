@@ -1,23 +1,23 @@
-# Deployment / Hosting Guide
+﻿# Deployment / Hosting Guide
 
 TriVista GST is a standard Node.js + MySQL/MariaDB stack. Production build serves the single-page React app from the Express backend.
 
 ## Windows development machine (this project)
 
-The dev database is a **standalone MariaDB 10.11** installed at `I:\mysql` — completely independent of XAMPP:
-- Binaries: `I:\mysql\bin\` · Data: `I:\mysql\data\` · Config: `I:\mysql\my.ini` (port 3306, root, no password).
+The dev database is **MariaDB via XAMPP** at `H:\xampp\mysql`:
+- Binaries: `H:\xampp\mysql\bin\` · Data: `H:\xampp\mysql\data\` · Config: `H:\xampp\mysql\bin\my.ini` (port 3306, root, no password).
 - Manage it: `scripts\start-db.ps1` (start), `scripts\stop-db.ps1` (stop), or the one-shot `scripts\start-all.ps1` (DB + API :5000 + frontend :5173).
-- Backups of the data live in `I:\TriveniGST\backups\` (full dumps of `triveni_gst_erp`, `tsa`, `college_notes` taken 2026-09-08).
+- Backups of the data live in `H:\TriveniGST\backups\` (full dumps of `triveni_gst_erp`, `tsa`, `college_notes` taken 2026-09-08).
 
 ## Recommended (small business)
 
-**Hostinger VPS (India region) — KR, ₹350–600/mo, Ubuntu 24.04**
+**Hostinger VPS (India region) â€” KR, â‚¹350â€“600/mo, Ubuntu 24.04**
 - 2 GB RAM, 1 vCPU is enough for a busy single-branch store (Node ~50 MB + MySQL ~200 MB).
 - Lowest friction for GST e-invoice/e-way bill outward calls and GSTR exports.
 
 Alternatives:
-- Shared hosting (Hostinger / Bluehost) with Node support + MySQL — cheapest, fine for a single shop, but Node hosting can be limited.
-- Cloud (Render/Railway/Fly.io + Neon/PlanetScale/RDS MySQL) — better for multi-branch/expansion, but keep an India-region server if you care about latency to GSTN.
+- Shared hosting (Hostinger / Bluehost) with Node support + MySQL â€” cheapest, fine for a single shop, but Node hosting can be limited.
+- Cloud (Render/Railway/Fly.io + Neon/PlanetScale/RDS MySQL) â€” better for multi-branch/expansion, but keep an India-region server if you care about latency to GSTN.
 
 ## Steps (Ubuntu VPS)
 
@@ -95,5 +95,5 @@ Out of the box e-Invoice runs in **sandbox mode**: GSTN 1.03 JSON + simulated IR
 ## Data locations
 
 - DB: `triveni_gst_erp` (schema in `backend/src/db/schema.sql`, seed in `seed.js`).
-- Exports: generated on demand (CSV / Tally XML) — no default file storage.
+- Exports: generated on demand (CSV / Tally XML) â€” no default file storage.
 - IRN/JSON payloads are stored per invoice in `einvoice_logs.raw_request / signed_invoice`.
