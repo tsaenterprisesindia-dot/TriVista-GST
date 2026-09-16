@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 
 const inr = (n) =>
@@ -7,6 +8,7 @@ const inr = (n) =>
 const PROVIDERS = ['NONE', 'OPENAI', 'GEMINI', 'AZURE'];
 
 export default function AIAssistant() {
+  const navigate = useNavigate();
   const [insights, setInsights] = useState(null);
   const [message, setMessage] = useState('');
   const [chat, setChat] = useState(null);
@@ -123,8 +125,17 @@ export default function AIAssistant() {
                 )}
               </div>
               <div style={{ whiteSpace: 'pre-wrap', background: '#f8fafc', padding: 12, borderRadius: 8 }}>
-                {chat.answer || chat.response || JSON.stringify(chat)}
+                {chat.summary || chat.answer || chat.response || JSON.stringify(chat)}
               </div>
+              {Array.isArray(chat.actions) && chat.actions.length > 0 && (
+                <div className="mt flex" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  {chat.actions.map((a, i) => (
+                    <button key={i} className="btn btn-sm" type="button" onClick={() => navigate(a.to || '/ai', { state: { params: a.params } })}>
+                      {a.label} →
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

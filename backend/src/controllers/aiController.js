@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const { getPool } = require('../db');
 const { round2 } = require('../utils/gst');
 
@@ -91,10 +91,10 @@ async function insights(req, res, next) {
       suggestions.push('No sales this month yet. Generate your first invoice to see insights here.');
     }
     if (topProduct[0] && topProduct[0].val > 0) {
-      suggestions.push(`Most valuable product: ${topProduct[0].item_name} (₹${Math.round(topProduct[0].val)}).`);
+      suggestions.push(`Most valuable product: ${topProduct[0].item_name} (â‚¹${Math.round(topProduct[0].val)}).`);
     }
     if (overdue[0].n > 0) {
-      suggestions.push(`Collect ${overdue[0].n} overdue invoice(s) totalling ₹${Math.round(overdue[0].amt)}.`);
+      suggestions.push(`Collect ${overdue[0].n} overdue invoice(s) totalling â‚¹${Math.round(overdue[0].amt)}.`);
     }
     suggestions.push(`${hsnCount[0].n} HSN/SAC codes available in master data.`);
 
@@ -152,7 +152,7 @@ async function chat(req, res, next) {
 }
 
 const TODAY = () => new Date().toISOString().slice(0, 10);
-const fmtINR = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+const fmtINR = (n) => 'â‚¹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
 const fmtAmt = (n) => (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -194,7 +194,7 @@ async function rulesAnswer(pool, message) {
   if (/^(hi|hello|hey|namaste|good\s*(morning|evening|afternoon))\b/.test(m)) {
     return {
       intent: 'greeting',
-      answer: `Hello! I'm the free built-in AI assistant of TriVista GST. Ask me about sales, GST rates, stock, receivables, invoices, customers, purchases or profit — I read your actual data and answer instantly. Try: "Total sales", "GST rates", "Low stock", "Receivables", "Top product".`,
+      answer: `Hello! I'm the free built-in AI assistant of TriVista GST. Ask me about sales, GST rates, stock, receivables, invoices, customers, purchases or profit â€” I read your actual data and answer instantly. Try: "Total sales", "GST rates", "Low stock", "Receivables", "Top product".`,
     };
   }
 
@@ -203,13 +203,13 @@ async function rulesAnswer(pool, message) {
     return {
       intent: 'help',
       answer: `I answer questions about your business from the database (no internet, no API key needed):
-• Sales: "Total sales this month", "Sales today", "GST collected"
-• GST: "GST rates", "GST rate for 5%", "HSN codes"
-• Stock: "Stock status", "Low stock", "Stock value"
-• Money: "Receivables", "Overdue invoices", "Payments received"
-• Products/customers: "Top product", "Top customers"
-• Purchases: "Purchases this month", "Bills pending"
-• Summary: "Profit summary", "Recent invoices"
+â€¢ Sales: "Total sales this month", "Sales today", "GST collected"
+â€¢ GST: "GST rates", "GST rate for 5%", "HSN codes"
+â€¢ Stock: "Stock status", "Low stock", "Stock value"
+â€¢ Money: "Receivables", "Overdue invoices", "Payments received"
+â€¢ Products/customers: "Top product", "Top customers"
+â€¢ Purchases: "Purchases this month", "Bills pending"
+â€¢ Summary: "Profit summary", "Recent invoices"
 Try any of these in plain English.`,
     };
   }
@@ -225,9 +225,9 @@ Try any of these in plain English.`,
     return {
       intent: 'gst',
       answer: `GST collected on ${r[0].n} invoice(s) (${rng}):
-• CGST: ${fmtINR(r[0].c)}  • SGST: ${fmtINR(r[0].s)}  • IGST: ${fmtINR(r[0].i)}
-• UTGST: ${fmtINR(r[0].u)}
-• Total GST: ${fmtINR(r[0].tax)}`,
+â€¢ CGST: ${fmtINR(r[0].c)}  â€¢ SGST: ${fmtINR(r[0].s)}  â€¢ IGST: ${fmtINR(r[0].i)}
+â€¢ UTGST: ${fmtINR(r[0].u)}
+â€¢ Total GST: ${fmtINR(r[0].tax)}`,
     };
   }
 
@@ -242,7 +242,7 @@ Try any of these in plain English.`,
       if (!rows.length) return { intent: 'gst', answer: `No HSN/SAC codes found at ${pct[1]}% in your master data.` };
       return {
         intent: 'gst',
-        answer: `HSN/SAC codes at ${pct[1]}%:\n` + rows.map((r) => `• ${r.code} (${r.type || '—'}) ${r.description || ''}`).join('\n'),
+        answer: `HSN/SAC codes at ${pct[1]}%:\n` + rows.map((r) => `â€¢ ${r.code} (${r.type || 'â€”'}) ${r.description || ''}`).join('\n'),
       };
     }
     const [dist] = await pool.query(`SELECT gst_rate, COUNT(*) n FROM hsn_sac_codes GROUP BY gst_rate ORDER BY gst_rate`);
@@ -250,7 +250,7 @@ Try any of these in plain English.`,
     const distTxt = dist.map((d) => `${fmtAmt(d.gst_rate)}% (${d.n})`).join(', ');
     return {
       intent: 'gst',
-      answer: `GST rates in your HSN/SAC master: ${distTxt}.\n\nSamples:\n` + sample.map((r) => `• ${r.code} ${r.gst_rate}% — ${r.description || ''}`).join('\n'),
+      answer: `GST rates in your HSN/SAC master: ${distTxt}.\n\nSamples:\n` + sample.map((r) => `â€¢ ${r.code} ${r.gst_rate}% â€” ${r.description || ''}`).join('\n'),
     };
   }
 
@@ -258,7 +258,7 @@ Try any of these in plain English.`,
   if (/(hsn|sac)/.test(m)) {
     const [rows] = await pool.query(`SELECT code, type, gst_rate, description FROM hsn_sac_codes ORDER BY code LIMIT 12`);
     if (!rows.length) return { intent: 'hsn', answer: 'No HSN/SAC codes in master data yet. Add them in Products or HSN master.' };
-    return { intent: 'hsn', answer: 'HSN/SAC codes in your master:\n' + rows.map((r) => `• ${r.code} (${r.type || '—'}) ${r.gst_rate}% — ${r.description || ''}`).join('\n') };
+    return { intent: 'hsn', answer: 'HSN/SAC codes in your master:\n' + rows.map((r) => `â€¢ ${r.code} (${r.type || 'â€”'}) ${r.gst_rate}% â€” ${r.description || ''}`).join('\n') };
   }
 
   // ---- Top product / best seller ----
@@ -271,7 +271,7 @@ Try any of these in plain English.`,
       p.all ? [] : [p.f, p.t]
     );
     if (!rows.length) return { intent: 'top-product', answer: `No sales found for ${rng}.` };
-    return { intent: 'top-product', answer: `Top products (${rng}):\n` + rows.map((r, i) => `• ${i + 1}. ${r.item_name} — ${fmtAmt(r.qty)} units, ${fmtINR(r.val)}`).join('\n') };
+    return { intent: 'top-product', answer: `Top products (${rng}):\n` + rows.map((r, i) => `â€¢ ${i + 1}. ${r.item_name} â€” ${fmtAmt(r.qty)} units, ${fmtINR(r.val)}`).join('\n') };
   }
 
   // ---- Sales / revenue ----
@@ -289,7 +289,7 @@ Try any of these in plain English.`,
     );
     return {
       intent: 'sales',
-      answer: `Sales (${rng}): ${fmtINR(r[0].total)} across ${r[0].n} invoice(s).\n• Collected: ${fmtINR(r[0].paid)}  • Uncollected: ${fmtINR(r[0].total - r[0].paid)}\n• Intra-state: ${fmtINR(r2[0].c)}  • Interstate: ${fmtINR(r[0].ig ? r[0].total - r2[0].c : r[0].total - r2[0].c)}`,
+      answer: `Sales (${rng}): ${fmtINR(r[0].total)} across ${r[0].n} invoice(s).\nâ€¢ Collected: ${fmtINR(r[0].paid)}  â€¢ Uncollected: ${fmtINR(r[0].total - r[0].paid)}\nâ€¢ Intra-state: ${fmtINR(r2[0].c)}  â€¢ Interstate: ${fmtINR(r[0].ig ? r[0].total - r2[0].c : r[0].total - r2[0].c)}`,
     };
   }
 
@@ -311,7 +311,7 @@ Try any of these in plain English.`,
     return {
       intent: 'customers',
       answer: `${cnt[0].n} active customer(s). Top by sales (${rng}):\n` +
-        (list.length ? list.map((c, i) => `• ${i + 1}. ${c.name} — ${fmtINR(c.v)} (${c.n} invoice${c.n > 1 ? 's' : ''})`).join('\n') : 'No sales yet.'),
+        (list.length ? list.map((c, i) => `â€¢ ${i + 1}. ${c.name} â€” ${fmtINR(c.v)} (${c.n} invoice${c.n > 1 ? 's' : ''})`).join('\n') : 'No sales yet.'),
     };
   }
 
@@ -330,8 +330,8 @@ Try any of these in plain English.`,
     );
     return {
       intent: 'receivables',
-      answer: `Outstanding receivables: ${fmtINR(r[0].amt)} across ${r[0].n} invoice(s).\n• Overdue: ${fmtINR(ov[0].amt)} (${ov[0].n})\n\nLargest dues:\n` +
-        (top.length ? top.map((t) => `• ${t.invoice_number} ${t.customer_name || ''} — ${fmtINR(t.balance_due)}${t.due_date ? ` (due ${t.due_date})` : ''}`).join('\n') : 'No pending invoices.'),
+      answer: `Outstanding receivables: ${fmtINR(r[0].amt)} across ${r[0].n} invoice(s).\nâ€¢ Overdue: ${fmtINR(ov[0].amt)} (${ov[0].n})\n\nLargest dues:\n` +
+        (top.length ? top.map((t) => `â€¢ ${t.invoice_number} ${t.customer_name || ''} â€” ${fmtINR(t.balance_due)}${t.due_date ? ` (due ${t.due_date})` : ''}`).join('\n') : 'No pending invoices.'),
     };
   }
 
@@ -346,10 +346,10 @@ Try any of these in plain English.`,
     }
     if (/(status)/.test(m)) {
       const [rows] = await pool.query(`SELECT status, COUNT(*) n FROM invoices GROUP BY status ORDER BY n DESC`);
-      return { intent: 'invoices', answer: 'Invoices by status:\n' + rows.map((x) => `• ${x.status}: ${x.n}`).join('\n') };
+      return { intent: 'invoices', answer: 'Invoices by status:\n' + rows.map((x) => `â€¢ ${x.status}: ${x.n}`).join('\n') };
     }
     const [rows] = await pool.query(`SELECT invoice_number, customer_name, invoice_date, status, grand_total FROM invoices ORDER BY created_at DESC LIMIT 5`);
-    return { intent: 'invoices', answer: 'Recent invoices:\n' + rows.map((x) => `• ${x.invoice_number} ${x.customer_name || ''} — ${fmtINR(x.grand_total)} [${x.status}] ${x.invoice_date}`).join('\n') };
+    return { intent: 'invoices', answer: 'Recent invoices:\n' + rows.map((x) => `â€¢ ${x.invoice_number} ${x.customer_name || ''} â€” ${fmtINR(x.grand_total)} [${x.status}] ${x.invoice_date}`).join('\n') };
   }
 
   // ---- Purchases / expenses ----
@@ -359,7 +359,7 @@ Try any of these in plain English.`,
       p.all ? [] : [p.f, p.t]
     );
     const [pay] = await pool.query(`SELECT IFNULL(SUM(balance_due),0) amt, COUNT(*) n FROM purchase_bills WHERE status IN ('PENDING','PARTIAL')`);
-    return { intent: 'purchases', answer: `Purchases (${rng}): ${fmtINR(r[0].total)} across ${r[0].n} bill(s).\n• Payable pending: ${fmtINR(pay[0].amt)} (${pay[0].n} bills)` };
+    return { intent: 'purchases', answer: `Purchases (${rng}): ${fmtINR(r[0].total)} across ${r[0].n} bill(s).\nâ€¢ Payable pending: ${fmtINR(pay[0].amt)} (${pay[0].n} bills)` };
   }
 
   // ---- Stock / inventory ----
@@ -375,8 +375,8 @@ Try any of these in plain English.`,
     const totalVal = r.reduce((s, x) => s + Number(x.val || 0), 0);
     let ans = `Stock value at purchase price: ${fmtINR(totalVal)} (${r.length} products tracked).\n`;
     if (/low|reorder|stock\s*status/.test(m)) {
-      if (!low.length) ans += '\nNo product is below its reorder level — stock looks healthy.';
-      else ans += `\n${low.length} product(s) at/below reorder level:\n` + low.slice(0, 8).map((x) => `• ${x.name}: ${fmtAmt(x.oh)} ${x.unit || ''} (min ${fmtAmt(x.min_stock || 0)})`).join('\n');
+      if (!low.length) ans += '\nNo product is below its reorder level â€” stock looks healthy.';
+      else ans += `\n${low.length} product(s) at/below reorder level:\n` + low.slice(0, 8).map((x) => `â€¢ ${x.name}: ${fmtAmt(x.oh)} ${x.unit || ''} (min ${fmtAmt(x.min_stock || 0)})`).join('\n');
     }
     return { intent: 'stock', answer: ans };
   }
@@ -403,7 +403,7 @@ Try any of these in plain English.`,
     const gross = s[0].total - b[0].total;
     return {
       intent: 'summary',
-      answer: `Trading summary (${rng}):\n• Sales: ${fmtINR(s[0].total)}\n• Purchases: ${fmtINR(b[0].total)}\n• Trading surplus (sales − purchases): ${fmtINR(gross)}\n\nFor the full P&L with all expense heads, open Accounting → Profit & Loss.`,
+      answer: `Trading summary (${rng}):\nâ€¢ Sales: ${fmtINR(s[0].total)}\nâ€¢ Purchases: ${fmtINR(b[0].total)}\nâ€¢ Trading surplus (sales âˆ’ purchases): ${fmtINR(gross)}\n\nFor the full P&L with all expense heads, open Accounting â†’ Profit & Loss.`,
     };
   }
 
@@ -413,7 +413,7 @@ Try any of these in plain English.`,
     const [gen] = await pool.query(`SELECT COUNT(*) n FROM invoices WHERE irn IS NOT NULL AND irn <> ''`);
     return {
       intent: 'einvoice',
-      answer: `e-Invoice activity:\n` + (rows.length ? rows.map((x) => `• ${x.status}: ${x.n}`).join('\n') : '• No e-invoice attempts yet.') +
+      answer: `e-Invoice activity:\n` + (rows.length ? rows.map((x) => `â€¢ ${x.status}: ${x.n}`).join('\n') : 'â€¢ No e-invoice attempts yet.') +
         `\n${gen[0].n} invoice(s) have an IRN.`,
     };
   }
@@ -536,7 +536,7 @@ async function validate(req, res, next) {
             suggestions.push(`Valid GSTIN format: 2-digit state + 10-char PAN + entity code + 'Z' + check digit (e.g. 29ABCDE1234F1Z5).`);
           }
         } else {
-          suggestions.push(`"${c.name}" has no GSTIN — invoice will be B2C. For a B2B (registered) sale, add the GSTIN in Customers.`);
+          suggestions.push(`"${c.name}" has no GSTIN â€” invoice will be B2C. For a B2B (registered) sale, add the GSTIN in Customers.`);
         }
         const supply = String(body.place_of_supply || c.state_code || companyState);
         const interstate = supply !== companyState;
@@ -549,7 +549,7 @@ async function validate(req, res, next) {
           });
         }
         if (Number(c.outstanding_balance || 0) > 0) {
-          suggestions.push(`"${c.name}" already owes ${fmtINR(c.outstanding_balance)} — collect before extending more credit.`);
+          suggestions.push(`"${c.name}" already owes ${fmtINR(c.outstanding_balance)} â€” collect before extending more credit.`);
         }
       }
     }
@@ -613,10 +613,10 @@ async function validate(req, res, next) {
         }
         const oh = stockMap[it.product_id];
         if (oh !== undefined && qty > oh) {
-          issues.push({ level: 'warn', field: `items[${i}].quantity`, message: `${p.name}: only ${fmtAmt(oh)} in stock but ${fmtAmt(qty)} billed — confirm stock before saving.` });
+          issues.push({ level: 'warn', field: `items[${i}].quantity`, message: `${p.name}: only ${fmtAmt(oh)} in stock but ${fmtAmt(qty)} billed â€” confirm stock before saving.` });
         }
       } else if (!it.product_id) {
-        issues.push({ level: 'warn', field: `items[${i}].product_id`, message: `${name}: no linked product — HSN/GST cannot be verified against master data.` });
+        issues.push({ level: 'warn', field: `items[${i}].product_id`, message: `${name}: no linked product â€” HSN/GST cannot be verified against master data.` });
       }
       if (!it.hsn_code) {
         issues.push({ level: 'warn', field: `items[${i}].hsn_code`, message: `${name}: missing HSN code. A 4+ digit HSN is expected on GST invoices.` });
@@ -626,11 +626,11 @@ async function validate(req, res, next) {
     // ---- Money ----
     const grand = r2(subtotal + tax);
     const paid = Number(body.paid_amount || 0);
-    if (grand <= 0) issues.push({ level: 'error', field: 'grand_total', message: 'Invoice total is zero — add products or rates.' });
+    if (grand <= 0) issues.push({ level: 'error', field: 'grand_total', message: 'Invoice total is zero â€” add products or rates.' });
     if (paid > grand) {
       issues.push({ level: 'error', field: 'paid_amount', message: `Paid amount ${fmtINR(paid)} exceeds grand total ${fmtINR(grand)}.` });
     } else if (paid === 0 && body.payment_mode && body.payment_mode !== 'CREDIT') {
-      suggestions.push(`Paid amount is 0 with mode "${body.payment_mode}" — switch to Credit or enter the amount received.`);
+      suggestions.push(`Paid amount is 0 with mode "${body.payment_mode}" â€” switch to Credit or enter the amount received.`);
     }
 
     if (companyGSTIN && !GSTIN_RE.test(companyGSTIN)) {
@@ -654,4 +654,109 @@ async function validate(req, res, next) {
   }
 }
 
-module.exports = { insights, chat, getSettings, saveSettings, validate };
+/**
+ * POST /api/ai/intents â€” return a *structured, actionable* intent (deep link +
+ * suggested action + pre-filled context) for the AI assistant page to render as
+ * buttons, instead of just prose. No network/AI key required.
+ * { message } -> { intent, title, chip, actions: [{label, to, params}], summary, rows }
+ */
+async function intents(req, res, next) {
+  try {
+    const pool = getPool();
+    const m = String(req.body?.message || '').toLowerCase().replace(/[?.!,]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const p = pickPeriod(m);
+    const rng = p.all ? 'all time' : `${p.f} â†’ ${p.t}`;
+    const periodClause = (pr, col = 'DATE(created_at)') => (pr.all ? '' : ` AND ${col} BETWEEN ? AND ?`);
+    const prms = (pr) => (pr.all ? [] : [pr.f, pr.t]);
+
+    const wrap = (title, chip, actions, summary, rows) => ({ intent: title.toLowerCase().replace(/\s+/g, '-'), title, chip, actions, summary, rows: rows || [] });
+
+    // ---- Returns / refunds guidance ----
+    if (/(return|refund|credit\s*note|sale\s*return)/.test(m)) {
+      const [recent] = await pool.query(
+        `SELECT invoice_number, customer_name, grand_total, invoice_date, status FROM invoices
+         WHERE status NOT IN ('CANCELLED') ORDER BY id DESC LIMIT 8`
+      );
+      return res.json(wrap(
+        'Sales returns & refunds',
+        'Process a return in one click',
+        [
+          { label: 'New Return', to: '/returns/new', params: {} },
+          { label: 'Return History', to: '/returns', params: {} },
+        ],
+        'Returns reverse stock & ledger automatically. Open a sale, pick the items being returned, choose a refund method (cash/bank/credit note) â€” the GST framework reverses CGST/SGST/IGST and credits the customer.',
+        recent.map((r) => ({ invoice_number: r.invoice_number, customer_name: r.customer_name, grand_total: Number(r.grand_total), status: r.status }))
+      ));
+    }
+
+    // ---- Dunning / collections -----
+    if (/(dun|collect|follow\s*up|overdue|remind|payment\s*due|receivable)/.test(m)) {
+      const where = `status IN ('PENDING','PARTIAL')${periodClause(p, 'invoice_date')}`;
+      const [rows] = await pool.query(
+        `SELECT id, customer_name, invoice_date, due_date, balance_due, customer_id FROM invoices
+         WHERE ${where} ORDER BY balance_due DESC LIMIT 20`, prms(p)
+      );
+      const total = rows.reduce((s, r) => s + Number(r.balance_due), 0);
+      return res.json(wrap(
+        'Overdue / pending collections',
+        `${fmtINR(total)} outstanding across ${rows.length} invoice(s)`,
+        [
+          { label: 'Open Outstanding Report', to: '/reports', params: {} },
+          { label: 'Record Payment', to: '/payment-links', params: {} },
+          ...rows.slice(0, 4).map((r) => ({ label: `${r.customer_name} Â· ${fmtINR(r.balance_due)}`, to: '/invoices', params: { id: r.id } })),
+        ],
+        `${rows.length} pending invoice(s) worth ${fmtINR(total)} (${rng}). Send gentle reminders; post partial receipts as they come in.`,
+        rows.slice(0, 10).map((r) => ({ invoice_number: r.id, customer_name: r.customer_name, balance_due: Number(r.balance_due), due_date: r.due_date }))
+      ));
+    }
+
+    // ---- Top products / stock ----
+    if (/(top|best|popular|fastest|stock|low\s*stock|reorder)/.test(m)) {
+      const [rows] = await pool.query(
+        `SELECT ii.item_name, IFNULL(SUM(ii.quantity),0) qty, IFNULL(SUM(ii.taxable_value),0) val
+         FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
+         WHERE i.status NOT IN ('CANCELLED')${periodClause(p, 'i.invoice_date')}
+         GROUP BY ii.item_name ORDER BY val DESC LIMIT 8`, prms(p)
+      );
+      return res.json(wrap(
+        'Top products & reorder watch',
+        `Best seller: ${rows[0]?.item_name || 'â€”'} Â· ${inr(rows[0]?.val || 0)}`,
+        [{ label: 'Open Inventory', to: '/inventory', params: {} }, { label: 'All Reports', to: '/reports', params: {} }],
+        `Top revenue items (${rng}):\n` + rows.map((r, i) => `${i + 1}. ${r.item_name} â€” ${fmtINR(r.val)} (${r.qty} units)`).join('\n'),
+        rows
+      ));
+    }
+
+    // ---- Sales summary ----
+    if (/(sale|revenue|billing|turnover|income)/.test(m)) {
+      const [r] = await pool.query(
+        `SELECT IFNULL(SUM(grand_total),0) total, COUNT(*) n FROM invoices
+         WHERE status NOT IN ('CANCELLED')${periodClause(p, 'invoice_date')}`, prms(p)
+      );
+      return res.json(wrap(
+        'Sales overview',
+        `${fmtINR(r[0].total)} across ${r[0].n} sale(s) (${rng})`,
+        [{ label: 'Open Reports', to: '/reports', params: {} }, { label: 'Daily DSR', to: '/daily', params: {} }],
+        `Total sales ${rng}: ${fmtINR(r[0].total)} from ${r[0].n} invoice(s).`,
+        []
+      ));
+    }
+
+    return res.json(wrap(
+      'AI assistant',
+      'Try a question â€” e.g. "top products", "overdue bills", "sales this month", "returns"',
+      [
+        { label: 'Top products', to: '/assistant', params: {} },
+        { label: 'Overdue collections', to: '/assistant', params: {} },
+        { label: 'Returns', to: '/return/new', params: {} },
+        { label: 'GST rates', to: '/tax-rates', params: {} },
+      ],
+      'Ask about sales, stock, receivables, GST, customers, purchases or profit in plain English â€” I read your live data.',
+      []
+    ));
+  } catch (e) {
+    next(e);
+  }
+}
+
+module.exports = { insights, chat, getSettings, validate, intents };

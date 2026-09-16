@@ -3,6 +3,7 @@ const c = require('../controllers/aiController');
 const { authenticate, authorize } = require('../middleware/auth');
 
 router.get('/insights', authenticate, c.insights);
+router.post('/intents', authenticate, c.intents);
 router.post('/chat', authenticate, c.chat);
 router.post('/validate', authenticate, c.validate);
 router.get('/settings', authenticate, c.getSettings);
