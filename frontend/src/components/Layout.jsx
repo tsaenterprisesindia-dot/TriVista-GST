@@ -33,13 +33,18 @@ const navGroups = [
     ],
   },
   {
-    title: 'Finance & Reports',
+    title: 'Finance & Ledger',
     items: [
       { to: '/accounting', label: 'Accounting', hideForViewer: true, feature: 'accounting' },
       { to: '/reconciliation', label: 'Reconciliation', feature: 'reconciliation' },
+    ],
+  },
+  {
+    title: 'Reports & Compliance',
+    items: [
+      { to: '/daily', label: 'Daily Sales (DSR)', feature: 'gstReports' },
       { to: '/review', label: 'Month Review', feature: 'gstReports' },
       { to: '/reports', label: 'GST Reports', feature: 'gstReports' },
-      { to: '/daily', label: 'Daily Sales (DSR)', feature: 'gstReports' },
       { to: '/tax-rates', label: 'GST Rates', hl: true, feature: 'gstReports' },
       { to: '/integration', label: 'e-Invoice / e-Way', feature: 'integration' },
     ],
@@ -47,12 +52,12 @@ const navGroups = [
   {
     title: 'Administration',
     items: [
+      { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
+      { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true, feature: 'users' },
       { to: '/assistant', label: 'AI Assistant', hideForViewer: true, feature: 'assistant' },
       { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true, feature: 'apiKeys' },
       { to: '/audit', label: 'Audit Log', hl: true, feature: 'audit' },
-      { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true, feature: 'users' },
       { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true, feature: 'licensing' },
-      { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
     ],
   },
   {
