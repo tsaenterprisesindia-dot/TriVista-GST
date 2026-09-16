@@ -35,6 +35,9 @@ export default function POS() {
   const [highlight, setHighlight] = useState(0);
   const [held, setHeld] = useState(loadHeld);
   const [showHeld, setShowHeld] = useState(false);
+  const [features, setFeatures] = useState({});
+  const [custPoints, setCustPoints] = useState(null);
+  const [redeemPoints, setRedeemPoints] = useState('');
   const searchRef = useRef(null);
   const flashTimer = useRef(null);
 
@@ -45,7 +48,17 @@ export default function POS() {
     }).catch((e) => setError(e.message));
     api.get('/customers?limit=100').then((d) => setCustomers(d.data || [])).catch(() => {});
     api.get('/company').then((d) => setCompany(d)).catch(() => {});
+    api.get('/model/features').then((f) => f && f.features && setFeatures(f.features)).catch(() => {});
   }, []);
+
+  const loyaltyOn = features.loyalty !== false;
+
+  useEffect(() => {
+    if (!loyaltyOn || !customerId) return setCustPoints(null);
+    api.get(`/loyalty/customers/${customerId}`)
+      .then((d) => setCustPoints(d))
+      .catch(() => setCustPoints(null));
+  }, [customerId, loyaltyOn]);
 
   useEffect(() => {
     const term = search.trim();
@@ -169,12 +182,16 @@ export default function POS() {
 
   const target = r2(Number(company?.round_off) === 1 ? Math.round(calc.grand) : calc.grand);
   const roundOff = r2(target - calc.grand);
+  const redeemPts = loyaltyOn && custPoints ? Math.min(Math.floor(Number(redeemPoints) || 0), Math.floor(Number(custPoints.points_balance) || 0)) : 0;
+  const redeemValue = r2(redeemPts > 0 ? Math.min(redeemPts, target) : 0);
+  const targetAfterPoints = r2(target - redeemValue);
   const payTotal = r2(
     (Array.isArray(payRows) ? payRows : []).reduce((s, r) => s + (Number(r.amount) || 0), 0)
   );
 
   const placeSale = async () => {
     if (!items.length) return;
+    if (redeemValue > target) { setError('Redemption exceeds bill total.'); return; }
     setError('');
     setReceipt(null);
     setBusy(true);
@@ -185,10 +202,10 @@ export default function POS() {
           amount: Number(r.amount),
           reference_no: r.reference_no || null,
         }))
-      : [{ mode: 'CASH', amount: target }];
-    if (rows.length && Math.abs(payTotal - target) > 0.01) {
+      : [{ mode: 'CASH', amount: redeemValue > 0 ? targetAfterPoints : target }];
+    if (rows.length && Math.abs(payTotal - targetAfterPoints) > 0.01) {
       setBusy(false);
-      setError(`Payment split total (${payTotal}) does not match bill total (${target}).`);
+      setError(`Payment split total (${payTotal}) does not match bill total after points (${targetAfterPoints}).`);
       return;
     }
     try {
@@ -196,6 +213,7 @@ export default function POS() {
         customer_id: customerId || null,
         payment_mode: payments[0].mode,
         payments,
+        redeem_points: redeemPts,
         items: items.map((it) => ({
           product_id: it.product_id,
           item_name: it.item_name,
@@ -211,6 +229,7 @@ export default function POS() {
       setReceipt(d);
       setItems([]);
       setPayRows([]);
+      setRedeemPoints('');
       setHighlight(0);
       searchRef.current?.focus();
     } catch (err) {
@@ -328,6 +347,12 @@ export default function POS() {
           <div style={{ fontSize: 24, fontWeight: 700 }}>{inr(receipt.invoice.grand_total)}</div>
           <div className="muted">{receipt.invoice.invoice_number}</div>
           <div className="mt">Total GST: {inr(receipt.invoice.tax_total)}</div>
+          {receipt.loyalty && (receipt.loyalty.earned_points > 0 || receipt.loyalty.redeemed_points > 0) && (
+            <div className="mt" style={{ fontSize: 13 }}>
+              {receipt.loyalty.redeemed_points > 0 && <div>Points redeemed: <b>{receipt.loyalty.redeemed_points}</b> (−{inr(receipt.loyalty.redeemed_value)})</div>}
+              {receipt.loyalty.earned_points > 0 && <div>Points earned: <b>+{receipt.loyalty.earned_points}</b></div>}
+            </div>
+          )}
           <div className="mt flex" style={{ justifyContent: 'center' }}>
             <button className="btn" onClick={() => window.print()}>Print Receipt</button>
             <button className="btn btn-primary" onClick={() => setReceipt(null)}>New Sale</button>
@@ -434,18 +459,45 @@ export default function POS() {
           <div className="row mb">
             <div>
               <label>Customer</label>
-              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+              <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setRedeemPoints(''); }}>
                 <option value="">Walk-in Customer</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
+            {loyaltyOn && custPoints && (
+              <div>
+                <label>Loyalty points</label>
+                <div className="muted" style={{ fontSize: 12 }}>Balance: <b>{custPoints.points_balance}</b></div>
+              </div>
+            )}
           </div>
+
+          {loyaltyOn && customerId && custPoints && Number(custPoints.points_balance) > 0 && items.length > 0 && (
+            <div className="row mb">
+              <label>Redeem points</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={redeemPoints}
+                onChange={(e) => setRedeemPoints(e.target.value)}
+                placeholder={`Up to ${custPoints.points_balance} pts (₹1/pt)`}
+                style={{ width: 140 }}
+              />
+              {Number(redeemPoints) > 0 && (
+                <span className="muted">= −{inr(Number(redeemPoints))} on bill</span>
+              )}
+              {Number(redeemPoints) > Number(custPoints.points_balance) && (
+                <span className="accent-red" style={{ fontSize: 12 }}> exceeds balance</span>
+              )}
+            </div>
+          )}
 
           {items.length > 0 && (
             <PaymentSplit
-              total={target}
+              total={targetAfterPoints}
               value={payRows}
               onChange={setPayRows}
               withReference
@@ -510,12 +562,20 @@ export default function POS() {
           <div className="row" style={{ fontSize: 20, fontWeight: 700, marginTop: 6 }}>
             <div>Total</div><div className="right nowrap">{inr(target)}</div>
           </div>
+          {redeemValue > 0 && (
+            <>
+              <div className="row"><div className="muted">Points redeemed</div><div className="right nowrap accent-green">− {inr(redeemValue)}</div></div>
+              <div className="row" style={{ fontSize: 18, fontWeight: 700 }}>
+                <div>To pay</div><div className="right nowrap">{inr(targetAfterPoints)}</div>
+              </div>
+            </>
+          )}
 
           <div className="mt flex" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={() => setItems([])} disabled={items.length === 0}>Clear</button>
             <button className="btn" onClick={hold} disabled={items.length === 0}>Hold (F4)</button>
             <button className="btn btn-primary" onClick={placeSale} disabled={busy || items.length === 0}>
-              {busy ? 'Processing…' : `Charge ${inr(target)} (F6)`}
+              {busy ? 'Processing…' : `Charge ${inr(targetAfterPoints)} (F6)`}
             </button>
           </div>
         </div>

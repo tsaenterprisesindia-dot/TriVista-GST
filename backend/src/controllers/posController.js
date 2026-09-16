@@ -9,6 +9,7 @@ const { audit } = require('../utils/audit');
 const ledger = require('../utils/ledger');
 const lots = require('../utils/lots');
 const payments = require('../utils/payments');
+const loyalty = require('./loyaltyController');
 
 /**
  * Sell from POS: creates a paid invoice, deducts stock, returns invoice details.
@@ -116,17 +117,47 @@ async function posSale(req, res, next) {
     // Payment legs — split (cash + UPI, etc.) must exactly total the rounded
     // grand total; legacy calls pay the full amount in a single mode.
     let legs;
-    const parsed = payments.parsePayments(b);
-    if (parsed.legs.length) {
-      if (Math.abs(parsed.total - grandTotal) > 0.01) {
-        throw Object.assign(
-          new Error(`Split payment total ${parsed.total} does not match bill total ${grandTotal}.`),
-          { status: 400, expose: true }
-        );
+    let pointsRedeemed = { points: 0, value: 0, ledger_id: null };
+    const loyaltyOn = await loyalty.loyaltyEnabled(conn);
+    const wantPoints = loyaltyOn ? Math.floor(Number(b.redeem_points) || 0) : 0;
+    if (wantPoints > 0) {
+      if (!customer || customer.customer_code === 'CUST-0001') {
+        throw Object.assign(new Error('Select a registered customer to redeem loyalty points.'), { status: 400, expose: true });
       }
-      legs = parsed.legs;
+      pointsRedeemed = await loyalty.burnPoints(conn, {
+        customer,
+        invoice_id: null, invoice_number: null,
+        date: new Date().toISOString().slice(0, 10),
+        points: wantPoints,
+        created_by: req.user.id,
+      });
+      if (!pointsRedeemed.value) throw Object.assign(new Error('Loyalty redemption not available.'), { status: 400, expose: true });
+      const remaining = round2(grandTotal - pointsRedeemed.value);
+      const parsed = payments.parsePayments(b);
+      if (parsed.legs.length) {
+        if (Math.abs(parsed.total - remaining) > 0.01) {
+          throw Object.assign(
+            new Error(`Payment total ${parsed.total} does not match balance after points ${remaining}.`),
+            { status: 400, expose: true }
+          );
+        }
+        legs = [...parsed.legs, { mode: 'POINTS', amount: pointsRedeemed.value, reference_no: null }];
+      } else {
+        legs = [{ mode: payments.normalizeMode(b.payment_mode || 'CASH'), amount: remaining }, { mode: 'POINTS', amount: pointsRedeemed.value, reference_no: null }];
+      }
     } else {
-      legs = [{ mode: payments.normalizeMode(b.payment_mode || 'CASH'), amount: grandTotal }];
+      const parsed = payments.parsePayments(b);
+      if (parsed.legs.length) {
+        if (Math.abs(parsed.total - grandTotal) > 0.01) {
+          throw Object.assign(
+            new Error(`Split payment total ${parsed.total} does not match bill total ${grandTotal}.`),
+            { status: 400, expose: true }
+          );
+        }
+        legs = parsed.legs;
+      } else {
+        legs = [{ mode: payments.normalizeMode(b.payment_mode || 'CASH'), amount: grandTotal }];
+      }
     }
     const firstLegMode = legs[0].mode;
 
@@ -200,6 +231,25 @@ async function posSale(req, res, next) {
       cess_total: round2(cessTotal),
     }, req.user.id);
 
+    // Backlink any redeemed points to this invoice and earn fresh points.
+    if (loyaltyOn && pointsRedeemed.ledger_id) {
+      await conn.query(
+        'UPDATE points_ledger SET invoice_id=?, invoice_number=? WHERE id=?',
+        [invoiceId, invoiceNumber, pointsRedeemed.ledger_id]
+      );
+    }
+    let pointsEarned = 0;
+    if (loyaltyOn && customer && customer.customer_code !== 'CUST-0001') {
+      pointsEarned = await loyalty.earnPoints(conn, {
+        customer,
+        invoice_id: invoiceId,
+        invoice_number: invoiceNumber,
+        date: new Date().toISOString().slice(0, 10),
+        taxable_value: round2(subtotal - discountTotal),
+        created_by: req.user.id,
+      });
+    }
+
     await conn.commit();
     await audit(req, 'CREATE', 'invoice', invoiceId, { invoice_number: invoiceNumber, customer_id: customer.id, source: 'POS', grand_total: grandTotal });
 
@@ -214,6 +264,7 @@ async function posSale(req, res, next) {
       invoice: full[0],
       items,
       company: companyRow[0] || null,
+      loyalty: loyaltyOn ? { redeemed_points: pointsRedeemed.points, redeemed_value: pointsRedeemed.value, earned_points: pointsEarned } : null,
       message: 'POS sale completed.',
     });
   } catch (e) {

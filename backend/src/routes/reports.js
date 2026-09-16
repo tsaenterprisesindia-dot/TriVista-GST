@@ -16,6 +16,7 @@ router.get('/tds-26q', authenticate, c.tdsReport);
 router.get('/tcs-27eq', authenticate, c.tcsReport);
 router.get('/trial-balance', authenticate, c.trialBalance);
 router.get('/aging', authenticate, c.aging);
+router.get('/daily', authenticate, c.daily);
 router.get('/export/csv', authenticate, c.exportCsv);
 router.get('/export/xml', authenticate, c.exportXml);
 router.get('/ca-export', authenticate, c.caExport);

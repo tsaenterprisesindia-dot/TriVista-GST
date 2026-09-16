@@ -299,6 +299,7 @@ CREATE TABLE `customers` (
   `opening_balance` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `outstanding_balance` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   `credit_limit` DECIMAL(14,2) DEFAULT NULL,
+  `points_balance` DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT 'Shadow of customer_points.points_balance (loyalty)',
   `tds_rate` DECIMAL(5,2) DEFAULT NULL,
   `tcs_rate` DECIMAL(5,2) DEFAULT NULL,
   `tds_threshold` DECIMAL(14,2) DEFAULT NULL,
@@ -310,6 +311,50 @@ CREATE TABLE `customers` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_customer_code` (`customer_code`),
   KEY `idx_customer_gstin` (`gstin`)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Loyalty points (Stage 3)
+-- ------------------------------------------------------------
+CREATE TABLE `loyalty_rules` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(90) NOT NULL DEFAULT 'Default',
+  `earn_points_per_100` DECIMAL(8,2) NOT NULL DEFAULT 1.00 COMMENT 'points earned per Rs.100 of taxable billed value',
+  `redeem_points_per_1` DECIMAL(8,2) NOT NULL DEFAULT 1.00 COMMENT 'redemption value in Rs. per point',
+  `min_bill_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT 'min bill to earn/burn',
+  `expiry_months` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 = never expires',
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `customer_points` (
+  `customer_id` INT UNSIGNED NOT NULL,
+  `points_balance` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `total_earned` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `total_burned` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`customer_id`),
+  CONSTRAINT `fk_cpoint_customer` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE `points_ledger` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `customer_id` INT UNSIGNED NOT NULL,
+  `date` DATE NOT NULL,
+  `type` ENUM('EARN','BURN','EXPIRE','ADJUST') NOT NULL,
+  `points` DECIMAL(14,2) NOT NULL COMMENT 'positive earn/add, negative burn/expire',
+  `invoice_id` INT UNSIGNED DEFAULT NULL,
+  `invoice_number` VARCHAR(60) DEFAULT NULL,
+  `note` VARCHAR(255) DEFAULT NULL,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pledger_customer` (`customer_id`),
+  KEY `idx_pledger_invoice` (`invoice_id`),
+  CONSTRAINT `fk_pledger_customer` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
@@ -485,7 +530,7 @@ CREATE TABLE `payments` (
   `date` DATE NOT NULL,
   `amount` DECIMAL(14,2) NOT NULL,
   `payment_type` ENUM('PAYMENT','REFUND') NOT NULL DEFAULT 'PAYMENT',
-  `mode` ENUM('CASH','CARD','UPI','BANK','OTHER') NOT NULL DEFAULT 'CASH',
+  `mode` ENUM('CASH','CARD','UPI','BANK','OTHER','POINTS') NOT NULL DEFAULT 'CASH',
   `reference_no` VARCHAR(60) DEFAULT NULL,
   `note` VARCHAR(255) DEFAULT NULL,
   `created_by` INT UNSIGNED DEFAULT NULL,

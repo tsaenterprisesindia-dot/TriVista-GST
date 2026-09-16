@@ -39,6 +39,7 @@ const navGroups = [
       { to: '/reconciliation', label: 'Reconciliation', feature: 'reconciliation' },
       { to: '/review', label: 'Month Review', feature: 'gstReports' },
       { to: '/reports', label: 'GST Reports', feature: 'gstReports' },
+      { to: '/daily', label: 'Daily Sales (DSR)', feature: 'gstReports' },
       { to: '/tax-rates', label: 'GST Rates', hl: true, feature: 'gstReports' },
       { to: '/integration', label: 'e-Invoice / e-Way', feature: 'integration' },
     ],

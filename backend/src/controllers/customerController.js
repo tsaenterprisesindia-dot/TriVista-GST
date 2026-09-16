@@ -17,7 +17,7 @@ async function list(req, res, next) {
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const offset = (Number(page) - 1) * Number(limit);
     const [rows] = await pool.query(
-      `SELECT id,customer_code,name,legal_name,company_name,gstin,registration_category,tax_exempt,pan,phone,email,address_line1,address_line2,city,state,state_code,pincode,opening_balance,outstanding_balance,credit_limit,tds_rate,tcs_rate,tds_threshold,tcs_threshold,is_active,created_at
+      `SELECT id,customer_code,name,legal_name,company_name,gstin,registration_category,tax_exempt,pan,phone,email,address_line1,address_line2,city,state,state_code,pincode,opening_balance,outstanding_balance,credit_limit,points_balance,tds_rate,tcs_rate,tds_threshold,tcs_threshold,is_active,created_at
        FROM customers ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
       [...params, Number(limit), offset]
     );

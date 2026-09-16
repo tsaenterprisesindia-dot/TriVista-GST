@@ -64,6 +64,8 @@ export default function CompanySettings() {
   const [brMsg, setBrMsg] = useState('');
   const [packs, setPacks] = useState({ models: [], features: [] });
   const [featForm, setFeatForm] = useState({});
+  const [loyalty, setLoyalty] = useState(null);
+  const [loyaltyMsg, setLoyaltyMsg] = useState('');
 
   useEffect(() => {
     api
@@ -102,6 +104,10 @@ export default function CompanySettings() {
       .get('/model/features')
       .then((f) => setFeatForm(f.features || {}))
       .catch(() => {});
+    api
+      .get('/loyalty/rules')
+      .then(setLoyalty)
+      .catch(() => {});
   }, []);
 
   const set = (k) => (e) => {
@@ -136,6 +142,32 @@ export default function CompanySettings() {
       setError(err.message);
     }
   };
+
+  const saveLoyalty = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaved('');
+    setLoyaltyMsg('');
+    try {
+      const rl = loyalty?.rules || {};
+      const r = await api.put('/loyalty/rules', {
+        id: rl.id || undefined,
+        name: rl.name,
+        earn_points_per_100: rl.earn_points_per_100,
+        redeem_points_per_1: rl.redeem_points_per_1,
+        min_bill_amount: rl.min_bill_amount,
+        expiry_months: rl.expiry_months,
+        is_active: rl.is_active,
+      });
+      setLoyaltyMsg(r.message);
+      setSaved('Loyalty program saved.');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const setLoy = (k) => (e) =>
+    setLoyalty((l) => ({ ...l, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
   const setCred = (k) => (e) => setCreds((c) => ({ ...c, [k]: e.target.value }));
 
@@ -490,6 +522,56 @@ export default function CompanySettings() {
           <div style={{ marginTop: '10px' }}>
             <button className="btn btn-primary" type="button" onClick={saveModel}>Save Model &amp; Modules</button>
           </div>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Loyalty Program</div>
+          <p style={{ marginBottom: '10px', fontSize: '13px' }}>
+            Registered customers earn points on paid sales and can redeem them at POS.
+            Points are posted to ledger and expiries are tracked per plan.
+          </p>
+          {(() => {
+            const r = loyalty?.rules || {};
+            return (
+              <>
+                <div className="grid-3">
+                  <div className="field">
+                    <label>Program Name</label>
+                    <input value={r.name ?? 'Default'} onChange={setLoy('name')} />
+                  </div>
+                  <div className="field">
+                    <label>Earn points per ₹100 (taxable)</label>
+                    <input type="number" step="0.1" min="0" value={r.earn_points_per_100 ?? 1} onChange={setLoy('earn_points_per_100')} />
+                  </div>
+                  <div className="field">
+                    <label>₹ value of 1 point (redeem at POS)</label>
+                    <input type="number" step="0.1" min="0" value={r.redeem_points_per_1 ?? 1} onChange={setLoy('redeem_points_per_1')} />
+                  </div>
+                  <div className="field">
+                    <label>Minimum bill amount to earn (₹)</label>
+                    <input type="number" step="1" min="0" value={r.min_bill_amount ?? 0} onChange={setLoy('min_bill_amount')} />
+                  </div>
+                  <div className="field">
+                    <label>Points expiry (months, 0 = never)</label>
+                    <input type="number" step="1" min="0" max="255" value={r.expiry_months ?? 0} onChange={setLoy('expiry_months')} />
+                  </div>
+                  <div className="field">
+                    <label>
+                      <input type="checkbox" checked={!!r.is_active} onChange={setLoy('is_active')} style={{ width: 'auto' }} />{' '}
+                      Active
+                    </label>
+                  </div>
+                </div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                  Members: <b>{loyalty?.members ?? 0}</b> · Points outstanding: <b>{loyalty?.points_outstanding ?? 0}</b>
+                </div>
+                {loyaltyMsg && <div className="success-banner">{loyaltyMsg}</div>}
+                <div style={{ marginTop: '10px' }}>
+                  <button className="btn btn-primary" type="button" onClick={saveLoyalty}>Save Loyalty Rules</button>
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         <div className="card">

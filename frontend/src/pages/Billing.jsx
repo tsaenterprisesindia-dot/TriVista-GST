@@ -67,7 +67,12 @@ export default function Billing() {
   const isApprover = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const visibleProducts = products.filter(
-    (p) => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.sku || '').toLowerCase().includes(search.toLowerCase())
+    (p) =>
+      !search ||
+      (p.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (p.sku || '').toLowerCase().includes(search.toLowerCase()) ||
+      (p.barcode || '').toLowerCase().includes(search.toLowerCase()) ||
+      (p.hsn_code || '').toLowerCase().includes(search.toLowerCase())
   );
   const isUt = ['04','26','34','38'].includes(String(companyState));
   const visibleSac = sac.filter(
@@ -469,7 +474,28 @@ export default function Billing() {
           </label>
         </div>
         <div className="field">
-          <input placeholder="Search products by name or SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input
+            placeholder="Search products by name, SKU, barcode or HSN — scan or type, then Enter…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && search.trim()) {
+                const term = search.trim().toLowerCase();
+                const exact = products.find(
+                  (p) =>
+                    String(p.barcode || '').toLowerCase() === term ||
+                    String(p.sku || '').toLowerCase() === term ||
+                    String(p.hsn_code || '').toLowerCase() === term
+                );
+                const target = exact || visibleProducts[0];
+                if (target) {
+                  e.preventDefault();
+                  addItem(target);
+                  if (exact) setSearch('');
+                }
+              }
+            }}
+          />
         </div>
         {visibleProducts.length === 0 ? (
           <div className="empty">No products found. Add products first.</div>

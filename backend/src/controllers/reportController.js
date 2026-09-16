@@ -1193,6 +1193,94 @@ async function tcsReport(req, res, next) {
   }
 }
 
+/**
+ * Daily Sales Report (DSR / Z-Report) — sales + GST split, payment-mode mix,
+ * returns & refunds, top moving items, net cash collected, all for one day.
+ */
+async function daily(req, res, next) {
+  try {
+    const pool = getPool();
+    let d = String(req.query.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) d = new Date().toISOString().slice(0, 10);
+
+    const notCnNotCancelled = `status NOT IN ('CANCELLED') AND invoice_type NOT IN ('CREDIT_NOTE')`;
+
+    const [sales] = await pool.query(
+      `SELECT COUNT(*) AS count,
+              IFNULL(SUM(subtotal),0) AS taxable,
+              IFNULL(SUM(discount),0) AS discounts,
+              IFNULL(SUM(cgst_total),0) AS cgst,
+              IFNULL(SUM(sgst_total),0) AS sgst,
+              IFNULL(SUM(utgst_total),0) AS utgst,
+              IFNULL(SUM(igst_total),0) AS igst,
+              IFNULL(SUM(cess_total),0) AS cess,
+              IFNULL(SUM(tax_total),0) AS tax,
+              IFNULL(SUM(round_off),0) AS round_off,
+              IFNULL(SUM(grand_total),0) AS grand,
+              IFNULL(SUM(paid_amount),0) AS collected
+       FROM invoices WHERE invoice_date=? AND ${notCnNotCancelled}`, [d]
+    );
+
+    const [byType] = await pool.query(
+      `SELECT invoice_type, is_interstate, COUNT(*) AS count, IFNULL(SUM(grand_total),0) AS total,
+              IFNULL(SUM(tax_total),0) AS tax, IFNULL(SUM(subtotal),0) AS taxable
+       FROM invoices WHERE invoice_date=? AND ${notCnNotCancelled}
+       GROUP BY invoice_type, is_interstate ORDER BY invoice_type`, [d]
+    );
+
+    // Payment-mode mix: each payment row joined back to that day's sales.
+    const [modeMix] = await pool.query(
+      `SELECT p.mode AS mode, COUNT(*) AS count, IFNULL(SUM(p.amount),0) AS total
+       FROM payments p
+       JOIN invoices i ON i.id=p.invoice_id
+       WHERE i.invoice_date=? AND ${notCnNotCancelled} AND p.payment_type='PAYMENT'
+       GROUP BY p.mode ORDER BY total DESC`, [d]
+    );
+
+    // Refunds done today (returns ledger + refund money out).
+    const [returns] = await pool.query(
+      `SELECT COUNT(*) AS count, IFNULL(SUM(grand_total),0) AS value,
+              IFNULL(SUM(refunded_amount),0) AS refunded
+       FROM returns WHERE return_date=?`, [d]
+    );
+    const [refundMix] = await pool.query(
+      `SELECT mode AS mode, COUNT(*) AS count, IFNULL(SUM(amount),0) AS total
+       FROM payments WHERE payment_type='REFUND' AND date=?
+       GROUP BY mode ORDER BY total DESC`, [d]
+    );
+
+    // Top moving items by quantity and value.
+    const [topItems] = await pool.query(
+      `SELECT ii.product_id, ii.item_name, ii.hsn_code, ii.gst_rate,
+              SUM(ii.quantity) AS qty, IFNULL(SUM(ii.taxable_value),0) AS value,
+              SUM(CASE ii.product_id WHEN NULL THEN 0 ELSE 1 END) AS with_product
+       FROM invoice_items ii
+       JOIN invoices i ON i.id=ii.invoice_id
+       WHERE i.invoice_date=? AND ${notCnNotCancelled}
+       GROUP BY ii.product_id, ii.item_name, ii.hsn_code, ii.gst_rate
+       ORDER BY value DESC LIMIT 15`, [d]
+    );
+
+    // Net cash collected: cash receipts today minus cash refunds today.
+    const cashIn = modeMix.find((m) => m.mode === 'CASH')?.total || 0;
+    const cashOut = refundMix.find((m) => m.mode === 'CASH')?.total || 0;
+    const netCash = Math.round((Number(cashIn) - Number(cashOut)) * 100) / 100;
+
+    res.json({
+      date: d,
+      sales: sales[0],
+      byType,
+      modeMix,
+      returns: returns[0],
+      refundMix,
+      topItems,
+      netCash,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
 module.exports = {
   dashboard,
   salesReport,
@@ -1211,4 +1299,5 @@ module.exports = {
   tdsReport,
   tcsReport,
   monthReview,
+  daily,
 };

@@ -14,7 +14,7 @@
 const { round2 } = require('./gst');
 const ledger = require('./ledger');
 
-const MODES = ['CASH', 'CARD', 'UPI', 'BANK', 'OTHER'];
+const MODES = ['CASH', 'CARD', 'UPI', 'BANK', 'OTHER', 'POINTS'];
 
 function normalizeMode(m) {
   const s = String(m || '').trim().toUpperCase();

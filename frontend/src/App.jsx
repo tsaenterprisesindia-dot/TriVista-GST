@@ -15,6 +15,7 @@ import CustomerView from './pages/CustomerView';
 import Vendors from './pages/Vendors';
 import Recurring from './pages/Recurring';
 import Reports from './pages/Reports';
+import DailyReport from './pages/DailyReport';
 import ReviewDashboard from './pages/ReviewDashboard';
 import Accounting from './pages/Accounting';
 import Integration from './pages/Integration';
@@ -74,6 +75,7 @@ function App() {
         <Route path="vendors" element={<Vendors />} />
         <Route path="recurring" element={<Recurring />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="daily" element={<DailyReport />} />
         <Route path="review" element={<ReviewDashboard />} />
         <Route path="accounting" element={<Accounting />} />
         <Route path="integration" element={<Integration />} />
