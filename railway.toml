@@ -1,0 +1,46 @@
+# Railway v2 service config (toml takes precedence over railway.json — removed).
+# Single service runs the whole app: Nixpacks builds frontend/dist via root
+# package.json `build`, `npm start` (root `start`) boots backend which also
+# serves the built frontend + /api. Healthcheck + restart so the MySQL-down
+# failure mode restarts instead of serving 500s.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+numReplicas = 1
+
+[[variables]]
+# Railway MySQL addon auto-provides these on the DB (MySQL) plugin. If you
+# named your MySQL service something other than "mysql", update the four
+# ${{services.<NAME>.variables.*}} refs below to match that name.
+name = "DB_HOST"
+value = "${{services.mysql.variables.MYSQLHOST}}"
+
+[[variables]]
+name = "DB_PORT"
+value = "${{services.mysql.variables.MYSQLPORT}}"
+
+[[variables]]
+name = "DB_USER"
+value = "${{services.mysql.variables.MYSQLUSER}}"
+
+[[variables]]
+name = "DB_PASSWORD"
+value = "${{services.mysql.variables.MYSQLPASSWORD}}"
+
+[[variables]]
+name = "DB_NAME"
+value = "${{services.mysql.variables.MYSQLDATABASE}}"
+
+# App secrets — add the Generate values via the same [variables] block here,
+# or (easiest) set them once in the dashboard Variables tab. Placeholders below
+# only document what to fill; do not deploy literal placeholders.
+# [[variables]]
+# name = "JWT_SECRET"
+# value = "${{ ... generate ... }}"
