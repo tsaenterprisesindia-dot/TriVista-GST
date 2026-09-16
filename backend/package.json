@@ -1,39 +1,39 @@
-{
-  "name": "triveni-gst-erp-backend",
-  "version": "1.0.0",
-  "description": "TriVista GST - Backend REST API (GST Billing, POS, Inventory, Reports)",
-  "main": "src/server.js",
-  "type": "commonjs",
-  "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "db:init": "node src/db/init.js",
-    "db:seed": "node src/db/seed.js",
-    "db:reset": "node src/db/init.js && node src/db/seed.js --clean"
-  },
-  "keywords": [
-    "gst",
-    "billing",
-    "erp",
-    "pos",
-    "inventory",
-    "india"
-  ],
-  "author": "TSA Enterprises",
-  "license": "UNLICENSED",
-  "dependencies": {
-    "archiver": "^5.3.2",
-    "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "express-rate-limit": "^7.4.0",
-    "helmet": "^7.1.0",
-    "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.11.0",
-    "qrcode": "^1.5.4"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.4"
-  }
+﻿{
+    "name":  "triveni-gst-erp-backend",
+    "version":  "1.0.0",
+    "description":  "TriVista GST - Backend REST API (GST Billing, POS, Inventory, Reports)",
+    "main":  "src/server.js",
+    "type":  "commonjs",
+    "scripts":  {
+                    "dev":  "nodemon src/server.js",
+                    "db:init":  "node src/db/init.js",
+                    "db:seed":  "node src/db/seed.js",
+                    "db:reset":  "node src/db/init.js \u0026\u0026 node src/db/seed.js --clean",
+                    "start":  "node src/server.js"
+                },
+    "keywords":  [
+                     "gst",
+                     "billing",
+                     "erp",
+                     "pos",
+                     "inventory",
+                     "india"
+                 ],
+    "author":  "TSA Enterprises",
+    "license":  "UNLICENSED",
+    "dependencies":  {
+                         "archiver":  "^5.3.2",
+                         "bcryptjs":  "^2.4.3",
+                         "cors":  "^2.8.5",
+                         "dotenv":  "^16.4.5",
+                         "express":  "^4.19.2",
+                         "express-rate-limit":  "^7.4.0",
+                         "helmet":  "^7.1.0",
+                         "jsonwebtoken":  "^9.0.2",
+                         "mysql2":  "^3.11.0",
+                         "qrcode":  "^1.5.4"
+                     },
+    "devDependencies":  {
+                            "nodemon":  "^3.1.4"
+                        }
 }
