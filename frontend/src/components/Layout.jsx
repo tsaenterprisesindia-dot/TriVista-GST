@@ -7,12 +7,14 @@ import NotificationBell from './NotificationBell';
 const navGroups = [
   {
     title: 'Main',
+    desc: 'At-a-glance overview of your business',
     items: [
       { to: '/', label: 'Dashboard', end: true },
     ],
   },
   {
     title: 'Sales',
+    desc: 'POS, invoicing and payment collection',
     items: [
       { to: '/pos', label: 'POS', hideForViewer: true, feature: 'pos' },
       { to: '/pos/shortcuts', label: 'POS Shortcuts', feature: 'pos' },
@@ -25,6 +27,7 @@ const navGroups = [
   },
   {
     title: 'Inventory & Parties',
+    desc: 'Products, stock and parties master data',
     items: [
       { to: '/products', label: 'Products', hideForServices: true, hideForViewer: true, feature: 'products' },
       { to: '/inventory', label: 'Inventory', hideForServices: true, hideForViewer: true, feature: 'inventory' },
@@ -34,6 +37,7 @@ const navGroups = [
   },
   {
     title: 'Finance & Ledger',
+    desc: 'Books, entries and reconciliation',
     items: [
       { to: '/accounting', label: 'Accounting', hideForViewer: true, feature: 'accounting' },
       { to: '/reconciliation', label: 'Reconciliation', feature: 'reconciliation' },
@@ -41,6 +45,7 @@ const navGroups = [
   },
   {
     title: 'Reports & Compliance',
+    desc: 'DSR, reviews, GST filings and e-invoice',
     items: [
       { to: '/daily', label: 'Daily Sales (DSR)', feature: 'gstReports' },
       { to: '/review', label: 'Month Review', feature: 'gstReports' },
@@ -51,6 +56,7 @@ const navGroups = [
   },
   {
     title: 'Administration',
+    desc: 'Settings, users, AI and platform tools',
     items: [
       { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
       { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true, feature: 'users' },
@@ -62,6 +68,7 @@ const navGroups = [
   },
   {
     title: 'Account',
+    desc: 'Profile, support and legal info',
     items: [
       { to: '/account', label: 'My Account' },
       { to: '/support', label: 'Support & Feedback' },
@@ -122,6 +129,7 @@ export default function Layout() {
           {navGroupsVisible.map((group) => (
             <div className="nav-group" key={group.title}>
               <div className="nav-group-title">{group.title}</div>
+              {group.desc && <div className="nav-group-desc">{group.desc}</div>}
               {group.items.map((item) => (
                 <NavLink
                   key={item.to}
