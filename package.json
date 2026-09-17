@@ -2,7 +2,7 @@
   "name": "triveni-gst",
   "private": true,
   "version": "3.0.0",
-  "description": "TriVista GST ERP — Express + MySQL backend that also serves the built React (Vite) frontend. Single Railway service.",
+  "description": "TriVista GST ERP - Express + MySQL backend that also serves the built React (Vite) frontend. Single Railway service.",
   "engines": {
     "node": ">=18"
   },
@@ -11,4 +11,3 @@
     "start": "cd backend && npm install && node src/server.js"
   }
 }
-</content>
