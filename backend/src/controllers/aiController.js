@@ -759,4 +759,4 @@ async function intents(req, res, next) {
   }
 }
 
-module.exports = { insights, chat, getSettings, validate, intents };
+module.exports = { insights, chat, getSettings, validate, saveSettings, intents };

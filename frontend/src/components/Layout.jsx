@@ -13,16 +13,22 @@ const navGroups = [
     ],
   },
   {
-    title: 'Sales',
-    desc: 'POS, invoicing and payment collection',
+    title: 'POS & Billing',
+    desc: 'Everything for the counter - POS, invoicing and payments',
     items: [
       { to: '/pos', label: 'POS', hideForViewer: true, feature: 'pos' },
       { to: '/pos/shortcuts', label: 'POS Shortcuts', feature: 'pos' },
       { to: '/billing', label: 'New Invoice', hideForViewer: true, feature: 'billing' },
       { to: '/invoices', label: 'Invoices', feature: 'billing' },
+      { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true, feature: 'paymentLinks' },
+    ],
+  },
+  {
+    title: 'Sales & Returns',
+    desc: 'Returns, adjustments and recurring billing',
+    items: [
       { to: '/returns', label: 'Returns', feature: 'returns' },
       { to: '/recurring', label: 'Recurring', hideForViewer: true, feature: 'recurring' },
-      { to: '/payment-links', label: 'Collect Payments', hideForViewer: true, hl: true, feature: 'paymentLinks' },
     ],
   },
   {
@@ -36,6 +42,18 @@ const navGroups = [
     ],
   },
   {
+    title: 'GST & Filings',
+    desc: 'All your GST reports, rates, filings and e-invoice in one place',
+    items: [
+      { to: '/daily', label: 'Daily Sales (DSR)', feature: 'gstReports' },
+      { to: '/review', label: 'Month Review', feature: 'gstReports' },
+      { to: '/reports', label: 'GST Reports', feature: 'gstReports' },
+      { to: '/tax-rates', label: 'GST Rates', hl: true, feature: 'gstReports' },
+      { to: '/gst-filing', label: 'File GST Yourself', hl: true, feature: 'gstReports' },
+      { to: '/integration', label: 'e-Invoice / e-Way', feature: 'integration' },
+    ],
+  },
+  {
     title: 'Finance & Ledger',
     desc: 'Books, entries and reconciliation',
     items: [
@@ -44,33 +62,16 @@ const navGroups = [
     ],
   },
   {
-    title: 'Reports & Compliance',
-    desc: 'DSR, reviews, GST filings and e-invoice',
+    title: 'User & Admin',
+    desc: 'Your account, users, AI and platform tools - everything managed together',
     items: [
-      { to: '/daily', label: 'Daily Sales (DSR)', feature: 'gstReports' },
-      { to: '/review', label: 'Month Review', feature: 'gstReports' },
-      { to: '/reports', label: 'GST Reports', feature: 'gstReports' },
-      { to: '/tax-rates', label: 'GST Rates', hl: true, feature: 'gstReports' },
-      { to: '/integration', label: 'e-Invoice / e-Way', feature: 'integration' },
-    ],
-  },
-  {
-    title: 'Administration',
-    desc: 'Settings, users, AI and platform tools',
-    items: [
+      { to: '/account', label: 'My Account' },
       { to: '/settings', label: 'Settings', hideForViewer: true, hl: true },
       { to: '/users', label: 'Users', hideForViewer: true, superAdminOnly: true, hl: true, feature: 'users' },
       { to: '/assistant', label: 'AI Assistant', hideForViewer: true, feature: 'assistant' },
       { to: '/api-keys', label: 'API Keys', hideForViewer: true, hl: true, feature: 'apiKeys' },
       { to: '/audit', label: 'Audit Log', hl: true, feature: 'audit' },
       { to: '/licensing', label: 'Licensing & Sales', hideForViewer: true, hl: true, feature: 'licensing' },
-    ],
-  },
-  {
-    title: 'Account',
-    desc: 'Profile, support and legal info',
-    items: [
-      { to: '/account', label: 'My Account' },
       { to: '/support', label: 'Support & Feedback' },
       { to: '/agreement', label: 'Terms & Conditions' },
     ],
