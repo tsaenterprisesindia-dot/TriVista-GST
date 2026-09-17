@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: trivista-gst
+    runtime: node
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd backend && npm install && node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # ---- Database (MySQL) ----
+      # Point these at your MySQL host. Local dev uses XAMPP (DB_HOST=127.0.0.1,
+      # DB_PORT=3306, DB_USER=root, DB_PASS="", DB_NAME=trivista_gst).
+      # For a hosted DB on Render/cloud: set DB_HOST/PORT/USER/PASSWORD/NAME here.
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      # ---- Auth / session ----
+      - key: JWT_SECRET
+        sync: false
+      - key: CRYPTO_KEY
+        sync: false
+      # ---- CORS ----
+      - key: CORS_ORIGINS
+        sync: false
